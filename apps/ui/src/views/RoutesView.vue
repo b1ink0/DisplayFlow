@@ -15,6 +15,8 @@ import {
 import { useApp } from '@/composables/context'
 import { call, desktop } from '@/services/bridge'
 import type { Monitor as MonitorType, Route, Attachment } from '@/types'
+import { standardInputs } from '@/lib/inputs'
+import InputSelect from '@/components/InputSelect.vue'
 import Button from '@/components/ui/Button.vue'
 import Badge from '@/components/ui/Badge.vue'
 import Modal from '@/components/ui/Modal.vue'
@@ -134,6 +136,14 @@ function edit(route?: Route) {
 async function save() {
   if (!draft.value.name.trim())
     throw new Error('Give this physical monitor a name.')
+  if (
+    draft.value.attachments.some(
+      (a) => !Number.isInteger(a.input) || a.input < 0 || a.input > 65535,
+    )
+  )
+    throw new Error(
+      'Each input must be a decimal or hexadecimal value from 0 to 65535.',
+    )
   await mutate((s) => {
     const index = s.routes.findIndex((r) => r.id === draft.value.id)
     const saved = { ...draft.value, activeComputer: null }
@@ -148,6 +158,18 @@ function options(device: string) {
       ? (snapshot.value?.monitors ?? [])
       : (inventory.value[device] ?? [])
   ).map((m) => ({ value: m.id, label: `${m.name} · ${m.provider}` }))
+}
+function inputPresets(a: Attachment) {
+  const monitors =
+    a.deviceId === settings.value?.deviceId
+      ? (snapshot.value?.monitors ?? [])
+      : (inventory.value[a.deviceId] ?? [])
+  const presets = monitors.find((m) => m.id === a.monitorId)?.inputPresets
+  if (presets?.length) return presets
+  return a.monitorId.startsWith('ddc:') ||
+    a.monitorId.startsWith('betterdisplay:')
+    ? standardInputs
+    : []
 }
 async function loadPeer(id: string) {
   inventory.value[id] = await call<MonitorType[]>('peer_inventory', { id })
@@ -481,15 +503,12 @@ function monitorName(id: string) {
             />
           </div>
           <div>
-            <label :for="`input-${index}`" class="label"
-              >Input value (decimal)</label
-            ><input
+            <label class="label">Input</label>
+            <InputSelect
               :id="`input-${index}`"
-              v-model.number="a.input"
-              type="number"
-              min="0"
-              max="65535"
-              class="field"
+              v-model="a.input"
+              :presets="inputPresets(a)"
+              @select-label="a.label = $event"
             />
           </div>
           <div>
@@ -510,9 +529,11 @@ function monitorName(id: string) {
         ><Plus :size="14" />Add another computer</Button
       >
       <p class="hint">
-        Standard MCCS suggestions: HDMI 1 = 17, HDMI 2 = 18, DisplayPort 1 = 15.
-        External modules can use their own values. Peer agents must also have a
-        local route allowing this monitor and its input values.
+        Standard presets are suggestions; verify your monitor's input values.
+        Modules can supply their own presets. Custom values accept decimal or
+        hex. The selected monitor provider controls the command protocol. Peer
+        agents must also have a local route allowing this monitor and its input
+        values.
       </p>
       <div class="flex justify-between border-t border-stone-100 pt-4">
         <Button

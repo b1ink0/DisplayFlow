@@ -107,6 +107,7 @@ pub fn enumerate() -> Result<Vec<Monitor>, String> {
             provider: "Windows DDC".into(),
             detail: "Standard MCCS input selection • verify assignments after cabling changes"
                 .into(),
+            input_presets: vec![],
         })
         .collect())
 }

@@ -49,13 +49,19 @@ Inventory:
       "id": "unit-serial-123",
       "name": "Desk display",
       "provider": "ignored",
-      "detail": "Identified physical unit"
+      "detail": "Identified physical unit",
+      "inputPresets": [
+        { "label": "HDMI 1", "value": 17 },
+        { "label": "DisplayPort", "value": 15 }
+      ]
     }
   ]
 }
 ```
 
 DisplayFlow prefixes IDs as `module:<module-id>:<monitor-id>` and replaces `provider` with the module ID. Use a stable physical identifier and reject ambiguous identification. Registering a module executes inventory only after trust confirmation and refresh.
+
+The optional `inputPresets` array supplies choices for the route editor. Each entry has a numeric `value` (0–65535) and a nonempty `label` of at most 64 UTF-8 bytes. Supply at most 32 entries with unique values. These are the logical values accepted by the module's `setInput` operation; the module implements its transport. Invalid preset data is rejected. Older modules can omit the array, and users can enter custom values in decimal or hexadecimal.
 
 Routine input selection:
 

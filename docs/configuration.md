@@ -16,6 +16,10 @@ Standard MCCS input values are commonly:
 
 These are suggestions, not a guarantee of monitor support. External providers may translate logical values into another transport. All attachments in a shared route must use compatible logical input values.
 
+The input dropdown offers common MCCS presets for built-in providers, or presets supplied by an external module. Choose **Custom value…** to enter a decimal number or hexadecimal value prefixed with `0x`, from 0 to 65535. Input labels are editable. Selecting a value does not change the command protocol: standard control uses VCP `0x60`, while an alternative transport requires a provider implementing it. The standard mappings are listed in [ddcutil's input-source reference](https://www.ddcutil.com/vcpinfo_output/).
+
+Create a separate route for each physical monitor. The current limits are 64 routes, with 2–16 computer attachments per route.
+
 Confirm the currently visible computer using the route selector. After an accepted request, DisplayFlow records an assumed source. After restart, editing a route, importing assignments, or a failed request, reconfirm the source. A manual joystick switch, cable change, or power cycle also requires reconfirmation.
 
 The agent driving the current input sends the next command. This supports monitors whose inactive inputs cannot accept commands. If that source is unavailable, DisplayFlow reports a failure rather than retrying a possibly accepted command.

@@ -19,7 +19,7 @@ fn handle(root: &Path, request: Value) -> Result<Value, String> {
         .unwrap_or(json!({"input":15,"requests":0}));
     let response = match operation {
         "enumerate" => {
-            json!({"ok":true,"monitors":[{"id":"virtual-display","name":"Virtual sample display","provider":"sample","detail":"Simulation only; this provider performs no hardware I/O"}]})
+            json!({"ok":true,"monitors":[{"id":"virtual-display","name":"Virtual sample display","provider":"sample","detail":"Simulation only; this provider performs no hardware I/O","inputPresets":[{"label":"HDMI 1","value":17},{"label":"HDMI 2","value":18},{"label":"DisplayPort","value":15}]}]})
         }
         "inspect" => {
             json!({"ok":true,"recoveryState":"notApplicable","message":"This virtual display demonstrates the process protocol without controlling hardware.","fields":{"Simulated input":state["input"],"Request count":state["requests"],"Hardware I/O":"None"}})

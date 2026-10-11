@@ -10,8 +10,10 @@ import {
   SelectItem,
   SelectItemText,
   SelectItemIndicator,
+  SelectScrollUpButton,
+  SelectScrollDownButton,
 } from 'reka-ui'
-import { Check, ChevronDown } from 'lucide-vue-next'
+import { Check, ChevronDown, ChevronUp } from 'lucide-vue-next'
 defineProps<{
   options: { value: string; label: string }[]
   placeholder?: string
@@ -31,8 +33,11 @@ const model = defineModel<string>({ default: '' })
       ><SelectContent
         position="popper"
         :side-offset="5"
-        class="z-50 max-h-72 min-w-(--reka-select-trigger-width) overflow-hidden rounded-lg border border-stone-200 bg-white p-1 shadow-xl"
-        ><SelectViewport
+        class="z-50 flex max-h-[min(18rem,var(--reka-select-content-available-height))] min-w-(--reka-select-trigger-width) flex-col overflow-hidden rounded-lg border border-stone-200 bg-white p-1 shadow-xl"
+        ><SelectScrollUpButton
+          class="flex shrink-0 items-center justify-center py-1 text-stone-400"
+          ><ChevronUp :size="14" /></SelectScrollUpButton
+        ><SelectViewport class="max-h-60 min-h-0"
           ><SelectItem
             v-for="option in options"
             :key="option.value"
@@ -41,9 +46,10 @@ const model = defineModel<string>({ default: '' })
             ><SelectItemText>{{ option.label }}</SelectItemText
             ><SelectItemIndicator class="absolute right-3"
               ><Check
-                :size="
-                  14
-                " /></SelectItemIndicator></SelectItem></SelectViewport></SelectContent
+                :size="14" /></SelectItemIndicator></SelectItem></SelectViewport
+        ><SelectScrollDownButton
+          class="flex shrink-0 items-center justify-center py-1 text-stone-400"
+          ><ChevronDown :size="14" /></SelectScrollDownButton></SelectContent
     ></SelectPortal>
   </SelectRoot>
 </template>

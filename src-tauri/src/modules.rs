@@ -242,6 +242,20 @@ pub async fn enumerate(state: &Shared) -> Vec<Monitor> {
             Ok(result) => {
                 match serde_json::from_value::<Vec<Monitor>>(result["monitors"].clone()) {
                     Ok(items) => monitors.extend(items.into_iter().map(|mut m| {
+                        let mut values = std::collections::HashSet::new();
+                        if m.input_presets.len() > 32
+                            || m.input_presets.iter().any(|p| {
+                                p.label.trim().is_empty()
+                                    || p.label.len() > 64
+                                    || !values.insert(p.value)
+                            })
+                        {
+                            state.log(
+                                "error",
+                                format!("{}: invalid input presets", module.manifest.name),
+                            );
+                            m.input_presets.clear();
+                        }
                         m.id = format!("module:{}:{}", module.manifest.id, m.id);
                         m.provider = module.manifest.id.clone();
                         m

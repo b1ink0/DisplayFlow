@@ -7,6 +7,13 @@ pub struct Monitor {
     pub name: String,
     pub provider: String,
     pub detail: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub input_presets: Vec<InputPreset>,
+}
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct InputPreset {
+    pub value: u16,
+    pub label: String,
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

@@ -32,6 +32,11 @@ export interface Monitor {
   name: string
   provider: string
   detail: string
+  inputPresets?: InputPreset[]
+}
+export interface InputPreset {
+  value: number
+  label: string
 }
 export type ModuleRequest =
   | { apiVersion: 1; operation: 'enumerate' }
