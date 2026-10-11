@@ -16,6 +16,7 @@ Desktop.ini
 .vscode/
 private/
 local-modules/
+/local-docs/
 *.bin
 *.dump
 *.pem

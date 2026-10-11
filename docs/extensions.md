@@ -14,7 +14,7 @@ Copy `samples/virtual-provider` into a separate module repository. Replace its s
 
 ## Contribute tabs
 
-Add an `ui.panels` section to the manifest:
+Add a `ui.panels` section to the manifest:
 
 ```json
 {

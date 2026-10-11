@@ -8,6 +8,14 @@ DisplayFlow is a desktop companion for [Deskflow](https://github.com/deskflow/de
 
 Map each computer to its monitor input and pair your computers over the local network. Configure your displays in the app, then control switching from the Windows system tray or macOS menu bar.
 
+![DisplayFlow screens with an example configuration](docs/images/overview.png)
+
+<p align="center">
+  <a href="https://github.com/b1ink0/DisplayFlow/releases/latest">Download for Windows</a> ·
+  <a href="#build-on-macos">Build for macOS</a> ·
+  <a href="docs/configuration.md">Setup guide</a>
+</p>
+
 ## Features
 
 - Multiple shared monitors, each with two or more connected computers.
@@ -30,7 +38,13 @@ Input control depends on the monitor, connection, and GPU driver. Automatic swit
 
 ## Install
 
-Follow [Build from source](#build-from-source) on Windows or macOS. Run the Windows installer or copy `DisplayFlow.app` into Applications on macOS. Builds are saved in `src-tauri/target/release/bundle`.
+### Windows
+
+Download `DisplayFlow_0.1.0_x64-setup.exe` from [Releases](https://github.com/b1ink0/DisplayFlow/releases), run the installer, and launch DisplayFlow. The installer is for Windows x64 and is not publisher-signed.
+
+### macOS
+
+Build the app locally using the [macOS instructions](#build-on-macos) below.
 
 ## Set up your displays
 
@@ -73,6 +87,21 @@ bun install --frozen-lockfile
 bun run dev
 ```
 
+Run `bun run build` to create installers and application bundles in `src-tauri/target/release/bundle`.
+
+### Build on macOS
+
+Install the prerequisites above on your Mac, then run:
+
+```sh
+git clone https://github.com/b1ink0/DisplayFlow.git
+cd DisplayFlow
+bun install --frozen-lockfile
+bun run build
+```
+
+Copy `src-tauri/target/release/bundle/macos/DisplayFlow.app` into `/Applications` and open it. The build targets your Mac's architecture and uses ad-hoc signing for local use; an Apple Developer account is not required. For distribution signing, see [Tauri's macOS guide](https://v2.tauri.app/distribute/sign/macos/).
+
 | Command                       | Purpose                                         |
 | ----------------------------- | ----------------------------------------------- |
 | `bun run dev`                 | Desktop app with Vite development server        |
@@ -90,8 +119,6 @@ The browser preview supports UI configuration; hardware and network operations r
 
 - [Configuration and troubleshooting](docs/configuration.md)
 - [Architecture](docs/architecture.md)
-- [Local setup API](docs/local-setup.md)
-- [Release distribution](docs/distribution.md)
 
 ## Contributing
 

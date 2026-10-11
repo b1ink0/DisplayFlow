@@ -47,7 +47,7 @@ Peer revocation is local; remove the peer on both computers to remove both direc
 
 - `providers/`: standard native monitor implementations.
 - External process protocol: additional input providers and monitor tools.
-- `deskflow.rs`: transition source can later be replaced with a structured Deskflow adapter.
-- `network.rs`: later discovery can advertise identity without changing the explicit pairing trust step.
+- `deskflow.rs`: reads server transition events.
+- `network.rs`: handles paired agent connections.
 
 DisplayFlow runs in the user's desktop session and reads Deskflow server transition logs. The UI configures assignments and pairing; the tray provides background controls.

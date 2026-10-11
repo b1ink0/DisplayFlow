@@ -12,6 +12,7 @@ export default ts.config(
       '**/node_modules/**',
       'private/**',
       'local-modules/**',
+      'local-docs/**',
     ],
   },
   js.configs.recommended,
