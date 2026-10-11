@@ -1,0 +1,35 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "DisplayFlow",
+  "version": "0.1.0",
+  "identifier": "dev.displayflow.desktop",
+  "build": {
+    "beforeDevCommand": "bun run dev:ui",
+    "devUrl": "http://127.0.0.1:1420",
+    "beforeBuildCommand": "bun run build:ui",
+    "frontendDist": "../apps/ui/dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "DisplayFlow",
+        "visible": false,
+        "width": 1200,
+        "height": 820,
+        "minWidth": 940,
+        "minHeight": 680
+      }
+    ],
+    "security": {
+      "devCsp": "default-src 'self'; connect-src ipc: http://ipc.localhost http://127.0.0.1:1420 ws://127.0.0.1:1420; img-src 'self' asset: http://asset.localhost data:; style-src 'self' 'unsafe-inline'",
+      "csp": "default-src 'self'; connect-src ipc: http://ipc.localhost; img-src 'self' asset: http://asset.localhost data:; style-src 'self' 'unsafe-inline'"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "shortDescription": "Monitor input routing for Deskflow",
+    "category": "Utility",
+    "icon": ["icons/icon.png", "icons/icon.ico", "icons/icon.icns"]
+  }
+}

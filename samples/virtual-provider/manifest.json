@@ -1,0 +1,33 @@
+{
+  "apiVersion": 1,
+  "id": "virtual-provider",
+  "name": "Virtual sample provider",
+  "version": "0.1.0",
+  "description": "A working module example with a simulated monitor and contributed tools tab. No hardware access.",
+  "executable": "provider",
+  "arguments": [],
+  "capabilities": ["enumerate", "setInput", "inspect", "action"],
+  "ui": {
+    "panels": [
+      {
+        "id": "sample-tools",
+        "title": "Sample tools",
+        "description": "Explore a module-contributed panel using a virtual display.",
+        "actions": [
+          {
+            "id": "describe",
+            "label": "Show sample status",
+            "description": "Read the virtual display state and module information.",
+            "requiresConfirmation": false
+          },
+          {
+            "id": "reset",
+            "label": "Reset sample state",
+            "description": "Reset the sample counter and simulated input. Requires explicit confirmation.",
+            "requiresConfirmation": true
+          }
+        ]
+      }
+    ]
+  }
+}

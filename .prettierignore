@@ -1,0 +1,11 @@
+node_modules
+dist
+target
+src-tauri/gen
+bun.lock
+Cargo.lock
+*.rs
+private
+local-modules
+private-modules
+.tools
