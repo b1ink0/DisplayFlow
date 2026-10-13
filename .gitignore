@@ -5,6 +5,8 @@ src-tauri/gen/
 .cache/
 .vite/
 coverage/
+test-results/
+playwright-report/
 *.tsbuildinfo
 .DS_Store
 Thumbs.db
@@ -21,6 +23,7 @@ local-modules/
 *.dump
 *.pem
 *.key
+*.vault
 *.pfx
 *.p12
 *.pdb

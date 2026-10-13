@@ -25,6 +25,7 @@ Declare the capabilities implemented by the executable:
 | ----------- | ------------------------------------------ |
 | `enumerate` | List supported monitors                    |
 | `setInput`  | Select a monitor input                     |
+| `getInput`  | Read current-input evidence                |
 | `inspect`   | Read monitor or provider status            |
 | `recover`   | Perform a confirmed local recovery action  |
 | `action`    | Run actions declared in contributed panels |
@@ -61,7 +62,7 @@ Inventory:
 
 DisplayFlow prefixes IDs as `module:<module-id>:<monitor-id>` and replaces `provider` with the module ID. Use a stable physical identifier and reject ambiguous identification. Registering a module executes inventory only after trust confirmation and refresh.
 
-The optional `inputPresets` array supplies choices for the route editor. Each entry has a numeric `value` (0–65535) and a nonempty `label` of at most 64 UTF-8 bytes. Supply at most 32 entries with unique values. These are the logical values accepted by the module's `setInput` operation; the module implements its transport. Invalid preset data is rejected. Older modules can omit the array, and users can enter custom values in decimal or hexadecimal.
+The optional `inputPresets` array supplies choices for the route editor. Each entry has a numeric `value` (0-65535) and a nonempty `label` of at most 64 UTF-8 bytes. Supply at most 32 entries with unique values. These are the logical values accepted by the module's `setInput` operation; the module implements its transport. Invalid preset data is rejected. Older modules can omit the array, and users can enter custom values in decimal or hexadecimal.
 
 Routine input selection:
 
@@ -77,6 +78,30 @@ Routine input selection:
 ```json
 { "ok": true, "message": "Request sent; picture has not been verified" }
 ```
+
+## Read-only input detection
+
+Declare the optional `getInput` capability to support automatic detection:
+
+```json
+{ "apiVersion": 1, "operation": "getInput", "monitorId": "unit-serial-123" }
+```
+
+Return the current logical input only when the device provides a reliable reading:
+
+```json
+{ "ok": true, "input": 15 }
+```
+
+A provider for a device proven to answer only on its visible connection can instead return:
+
+```json
+{ "ok": true, "activeConnection": true }
+```
+
+This assertion requires a validated live protocol response and repeated verification on active and inactive connections. Enumeration, EDID availability, a firmware/version reply, a successful API call, or a generic null reply are insufficient. A monitor may answer identity queries on an inactive connection. Never infer visibility from another connection failing. An unreliable or unsupported getter should return `ok: false` with a message and should not advertise `getInput`. Do not send an input setter or recovery command during this operation.
+
+`getInput` has a maximum process timeout of five seconds. Detection reconciles replies across assigned agents; contradictory or unmapped values leave the source unknown. Modules without this capability retain manual confirmation and routine switching.
 
 Inspect (read-only, no hardware writes):
 

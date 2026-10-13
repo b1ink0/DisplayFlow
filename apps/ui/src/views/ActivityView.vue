@@ -1,7 +1,31 @@
-<script setup lang="ts">
-import { Activity, CheckCircle2, CircleAlert, Info } from 'lucide-vue-next'
+﻿<script setup lang="ts">
+import { computed, ref, watch } from 'vue'
+import { CheckCircle2, CircleAlert, Info } from 'lucide-vue-next'
 import { useApp } from '@/composables/context'
+import Select from '@/components/ui/Select.vue'
+import EmptyState from '@/components/product/EmptyState.vue'
+import ListToolbar from '@/components/product/ListToolbar.vue'
+import UPagination from '@nuxt/ui/components/Pagination.vue'
 const { snapshot } = useApp()
+const level = ref('all')
+const page = ref(1)
+const events = computed(() =>
+  (snapshot.value?.activity ?? []).filter(
+    (e) => level.value === 'all' || e.level === level.value,
+  ),
+)
+const visible = computed(() =>
+  events.value.slice((page.value - 1) * 25, page.value * 25),
+)
+watch(level, () => {
+  page.value = 1
+})
+watch(
+  () => events.value.length,
+  (count) => {
+    page.value = Math.max(1, Math.min(page.value, Math.ceil(count / 25)))
+  },
+)
 function time(at: number) {
   return new Date(at * 1000).toLocaleTimeString([], {
     hour: '2-digit',
@@ -11,47 +35,73 @@ function time(at: number) {
 }
 </script>
 <template>
-  <div class="panel overflow-hidden">
-    <div
-      class="flex items-center justify-between border-b border-stone-100 px-6 py-4"
+  <div class="flex min-w-0 flex-col gap-4">
+    <ListToolbar title="Agent events" :count="events.length"
+      ><Select
+        v-model="level"
+        label="Filter event level"
+        :options="[
+          { value: 'all', label: 'All events' },
+          { value: 'error', label: 'Errors' },
+          { value: 'warning', label: 'Warnings' },
+          { value: 'success', label: 'Success' },
+          { value: 'info', label: 'Information' },
+        ]"
+        class="w-40"
+    /></ListToolbar>
+    <EmptyState
+      v-if="!events.length"
+      title="No events to show"
+      description="Agent activity appears here as it runs. Try another filter if events are hidden."
+      icon="i-lucide-activity"
+    />
+    <ol
+      v-else
+      class="flex min-w-0 flex-col divide-y divide-default border-y border-default"
     >
-      <h2 class="section-title">Agent activity</h2>
-      <span class="text-xs text-stone-400"
-        >Latest 150 events · this session</span
-      >
-    </div>
-    <div v-if="!snapshot?.activity.length" class="px-6 py-14 text-center">
-      <Activity :size="30" class="mx-auto mb-3 text-stone-300" />
-      <p class="text-sm text-stone-500">
-        Events will appear here as the agent runs.
-      </p>
-    </div>
-    <ol class="divide-y divide-stone-100">
       <li
-        v-for="(event, index) in snapshot?.activity"
+        v-for="(event, index) in visible"
         :key="`${event.at}-${index}`"
-        class="flex items-start gap-4 px-6 py-4"
+        class="flex min-w-0 items-start gap-3 py-4"
       >
         <CircleAlert
-          v-if="event.level === 'error'"
-          :size="17"
-          class="mt-0.5 shrink-0 text-red-500"
+          v-if="event.level === 'error' || event.level === 'warning'"
+          :size="16"
+          :class="[
+            'shrink-0',
+            event.level === 'error' ? 'text-error' : 'text-warning',
+          ]"
         /><CheckCircle2
           v-else-if="event.level === 'success'"
-          :size="17"
-          class="mt-0.5 shrink-0 text-emerald-500"
-        /><Info v-else :size="17" class="mt-0.5 shrink-0 text-stone-400" />
-        <p class="flex-1 text-sm leading-relaxed text-stone-600">
-          {{ event.message }}
-        </p>
-        <time class="mt-0.5 shrink-0 font-mono text-xs text-stone-400">{{
-          time(event.at)
-        }}</time>
+          :size="16"
+          class="shrink-0 text-success"
+        /><Info v-else :size="16" class="shrink-0 text-muted" />
+        <div
+          class="flex min-w-0 flex-1 flex-col gap-2 sm:flex-row sm:justify-between"
+        >
+          <p class="min-w-0 text-base leading-relaxed break-words">
+            {{ event.message }}
+          </p>
+          <time
+            :datetime="new Date(event.at * 1000).toISOString()"
+            class="shrink-0 text-xs text-muted tabular-nums"
+            :title="new Date(event.at * 1000).toLocaleString()"
+            >{{ time(event.at) }}</time
+          >
+        </div>
       </li>
     </ol>
+    <div class="flex flex-wrap items-center justify-between gap-3">
+      <p class="hint">
+        Up to 150 events from this session. “Request sent” confirms command
+        acceptance, not the visible picture.
+      </p>
+      <UPagination
+        v-if="events.length > 25"
+        v-model:page="page"
+        :total="events.length"
+        :items-per-page="25"
+      />
+    </div>
   </div>
-  <p class="hint mt-4">
-    “Request sent” records command acceptance, not a verified picture change.
-    Recovery responses are reported exactly as provided by the external module.
-  </p>
 </template>

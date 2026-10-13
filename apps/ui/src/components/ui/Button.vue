@@ -1,6 +1,11 @@
-<script setup lang="ts">
+﻿<script setup lang="ts">
+import { computed, useAttrs } from 'vue'
+import UButton from '@nuxt/ui/components/Button.vue'
+import UTooltip from '@nuxt/ui/components/Tooltip.vue'
 import { cn } from '@/lib/utils'
-withDefaults(
+import { tooltipContent } from '@/lib/theme'
+defineOptions({ inheritAttrs: false })
+const props = withDefaults(
   defineProps<{
     variant?: 'primary' | 'secondary' | 'ghost' | 'danger'
     class?: string
@@ -9,28 +14,32 @@ withDefaults(
   }>(),
   { variant: 'secondary', type: 'button', class: '' },
 )
+const attrs = useAttrs()
+function tooltip() {
+  return typeof attrs['aria-label'] === 'string'
+    ? attrs['aria-label']
+    : undefined
+}
+const color = computed(() => (props.variant === 'danger' ? 'error' : 'neutral'))
+const variant = computed(() =>
+  props.variant === 'primary'
+    ? 'solid'
+    : props.variant === 'ghost'
+      ? 'ghost'
+      : props.variant === 'danger'
+        ? 'soft'
+        : 'outline',
+)
 </script>
 <template>
-  <button
-    :type="type"
-    :disabled="disabled"
-    :class="
-      cn(
-        'inline-flex items-center justify-center gap-2 rounded-lg border px-3.5 py-2 text-sm font-medium transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-violet-500 disabled:pointer-events-none disabled:opacity-45',
-        {
-          'border-violet-600 bg-violet-600 text-white shadow-sm hover:bg-violet-700':
-            variant === 'primary',
-          'border-stone-200 bg-white text-stone-700 shadow-xs hover:bg-stone-50':
-            variant === 'secondary',
-          'border-transparent text-stone-500 hover:bg-stone-100 hover:text-stone-900':
-            variant === 'ghost',
-          'border-red-200 bg-red-50 text-red-700 hover:bg-red-100':
-            variant === 'danger',
-        },
-        $props.class,
-      )
-    "
-  >
-    <slot />
-  </button>
+  <UTooltip :text="tooltip()" :disabled="!tooltip()" :content="tooltipContent"
+    ><UButton
+      v-bind="attrs"
+      :type="type"
+      :disabled="disabled"
+      :color="color"
+      :variant="variant"
+      :class="cn('shrink-0', $props.class)"
+      ><slot /></UButton
+  ></UTooltip>
 </template>

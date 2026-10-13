@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "packageManager": "bun@1.3.5",
+  "packageManager": "bun@1.4.3",
   "workspaces": [
     "apps/*",
     "packages/*"
@@ -11,7 +11,8 @@
   "scripts": {
     "dev": "bun node_modules/@tauri-apps/cli/tauri.js dev",
     "dev:ui": "bun run --cwd apps/ui dev",
-    "build": "bun node_modules/@tauri-apps/cli/tauri.js build",
+    "build": "bun scripts/build.ts",
+    "macos:signing": "bun scripts/macos-signing.ts",
     "build:ui": "bun run --cwd apps/ui build",
     "preview": "bun run --cwd apps/ui preview",
     "check": "bun run check:ui && bun run check:rust",
@@ -21,10 +22,12 @@
     "format": "bun --bun prettier --write . && cargo fmt --manifest-path src-tauri/Cargo.toml && cargo fmt --manifest-path samples/virtual-provider/Cargo.toml",
     "format:check": "bun --bun prettier --check . && cargo fmt --manifest-path src-tauri/Cargo.toml -- --check && cargo fmt --manifest-path samples/virtual-provider/Cargo.toml -- --check",
     "tauri": "bun node_modules/@tauri-apps/cli/tauri.js",
-    "module:sample:build": "bun scripts/build-sample.ts"
+    "module:sample:build": "bun scripts/build-sample.ts",
+    "test:ui": "playwright test"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.0",
+    "@playwright/test": "1.64.0",
     "@tauri-apps/cli": "^2.10.0",
     "eslint": "^9.39.0",
     "eslint-config-prettier": "^10.1.8",

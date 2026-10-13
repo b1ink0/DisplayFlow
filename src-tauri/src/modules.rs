@@ -87,11 +87,17 @@ pub fn inspect(path: &str) -> Result<MountedModule, String> {
     if manifest.api_version != 1 || !valid_id(&manifest.id) {
         return Err("Invalid module ID or unsupported API version".into());
     }
-    if manifest
-        .capabilities
-        .iter()
-        .any(|c| !["enumerate", "inspect", "setInput", "recover", "action"].contains(&c.as_str()))
-    {
+    if manifest.capabilities.iter().any(|c| {
+        ![
+            "enumerate",
+            "inspect",
+            "getInput",
+            "setInput",
+            "recover",
+            "action",
+        ]
+        .contains(&c.as_str())
+    }) {
         return Err("Unknown module capability".into());
     }
     if [manifest.timeout_seconds, manifest.recovery_timeout_seconds]
@@ -214,7 +220,9 @@ pub async fn request(
         }
         Ok(result)
     };
-    let timeout = if operation == "recover" {
+    let timeout = if operation == "getInput" {
+        Some(module.manifest.timeout_seconds.unwrap_or(5).min(5))
+    } else if operation == "recover" {
         module
             .manifest
             .recovery_timeout_seconds

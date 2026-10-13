@@ -32,6 +32,31 @@ pub struct Route {
     pub attachments: Vec<Attachment>,
     pub active_computer: Option<String>,
     pub enabled: bool,
+    #[serde(default)]
+    pub auto_detect: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub coordinator_device_id: Option<String>,
+}
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct InputReading {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub input: Option<u16>,
+    #[serde(default)]
+    pub active_connection: bool,
+}
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DetectionStatus {
+    pub status: String,
+    pub message: String,
+    pub checked_at: u64,
+}
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RouteSyncStatus {
+    pub status: String,
+    pub message: String,
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -100,6 +125,8 @@ pub struct Snapshot {
     pub platform: String,
     pub agent_status: String,
     pub log_status: String,
+    pub route_detection: std::collections::HashMap<String, DetectionStatus>,
+    pub route_sync: std::collections::HashMap<String, RouteSyncStatus>,
 }
 pub fn now() -> u64 {
     std::time::SystemTime::now()

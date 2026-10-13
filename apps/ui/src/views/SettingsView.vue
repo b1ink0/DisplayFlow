@@ -1,10 +1,12 @@
 <script setup lang="ts">
+import UInput from '@nuxt/ui/components/Input.vue'
 import { watch, ref, onMounted } from 'vue'
-import { Save, SlidersHorizontal, Plus, Trash2 } from 'lucide-vue-next'
+import { Save, Plus, Trash2 } from 'lucide-vue-next'
 import { useApp } from '@/composables/context'
 import { call, desktop } from '@/services/bridge'
 import Button from '@/components/ui/Button.vue'
 import Toggle from '@/components/ui/Toggle.vue'
+import PageSection from '@/components/product/PageSection.vue'
 const { settings, snapshot, busy, run, mutate, refresh } = useApp()
 const name = ref('')
 const log = ref('')
@@ -82,67 +84,53 @@ async function register() {
 }
 </script>
 <template>
-  <div class="panel max-w-3xl">
-    <div class="flex items-center gap-3 border-b border-stone-100 p-6">
-      <SlidersHorizontal :size="19" class="text-violet-600" />
-      <h2 class="section-title">Agent & Deskflow</h2>
-    </div>
-    <div class="space-y-6 p-6">
-      <div>
-        <label for="computer-name" class="label"
-          >This computer’s Deskflow name</label
-        ><input id="computer-name" v-model="name" class="field" />
-        <p class="hint mt-2">
-          Use the exact name in Deskflow’s server configuration. Hostname and
-          Deskflow name can differ.
-        </p>
-      </div>
-      <div>
-        <label for="deskflow-log" class="label">Deskflow server log path</label
-        ><input
-          id="deskflow-log"
-          v-model="log"
-          class="field font-mono"
-          placeholder="Absolute path to the current server log"
-        />
-        <p class="hint mt-2">
-          Set this on the Deskflow server computer only. Enable logging in
-          Deskflow at a level that records
-          <code>switch from &quot;name&quot; to &quot;name&quot;</code>
-          transitions. DisplayFlow watches new lines and leaves unassigned
-          destinations alone.
-        </p>
+  <div class="flex max-w-4xl min-w-0 flex-col gap-8">
+    <PageSection
+      title="Agent & Deskflow"
+      description="Use the computer name from Deskflow. Configure its log only on the server computer."
+    >
+      <div class="flex flex-col gap-4 sm:flex-row">
+        <div class="flex min-w-0 flex-1 flex-col gap-2">
+          <label for="computer-name" class="label"
+            >This computer’s Deskflow name</label
+          ><UInput id="computer-name" v-model="name" />
+          <p class="hint">This can differ from its OS hostname.</p>
+        </div>
+        <div class="flex min-w-0 flex-1 flex-col gap-2">
+          <label for="deskflow-log" class="label"
+            >Deskflow server log path</label
+          ><UInput
+            id="deskflow-log"
+            v-model="log"
+            :ui="{ base: 'font-mono' }"
+            placeholder="Absolute path to the current server log"
+          />
+          <p class="hint">Leave empty on client computers.</p>
+        </div>
       </div>
       <div
-        class="flex items-center justify-between rounded-lg border border-stone-200 p-4"
+        class="flex items-center justify-between gap-4 border-t border-default py-4"
       >
-        <div>
-          <h3 class="text-sm font-medium">
-            Accept paired computer connections
-          </h3>
-          <p class="hint mt-1">
-            Off by default. Needed on every computer participating in peer
-            routing.
+        <div class="flex flex-col gap-1">
+          <h3 class="text-sm font-medium">Peer agent</h3>
+          <p class="hint">
+            Allow paired computers to request assigned monitor inputs.
           </p>
         </div>
         <Toggle v-model="network" label="Enable peer agent" />
       </div>
-      <div v-if="network">
+      <div v-if="network" class="flex max-w-xs flex-col gap-2">
         <label for="listen-port" class="label">TCP listen port</label
-        ><input
+        ><UInput
           id="listen-port"
           v-model.number="port"
           type="number"
           min="1024"
           max="65535"
-          class="field max-w-40"
         />
-        <p class="hint mt-2">
-          Default 24862. Allow only your private local network in the OS
-          firewall. No router port forwarding.
-        </p>
+        <p class="hint">Default 24862. Use your private local network.</p>
       </div>
-      <div class="flex justify-end border-t border-stone-100 pt-4">
+      <div class="flex justify-end">
         <Button
           variant="primary"
           :disabled="busy || !settings"
@@ -150,138 +138,137 @@ async function register() {
           ><Save :size="14" />Save settings</Button
         >
       </div>
-    </div>
-  </div>
-  <section class="panel mt-6 max-w-3xl p-6">
-    <h2 class="section-title">Local network access</h2>
-    <p class="hint mt-2">
-      DisplayFlow runs as your normal user. Pairing and remote input requests
-      need local network access. No router forwarding or SSH service is needed.
-    </p>
-    <template v-if="snapshot?.platform === 'windows'">
-      <p class="hint mt-3">
-        Save the listen port first. This one-time firewall setup asks Windows
-        for administrator approval and allows the installed app on the local
-        subnet of Private and Domain networks. Changing the port or installation
-        path requires updating the rule. Public networks remain blocked by this
-        rule.
-      </p>
-      <div class="mt-4 flex flex-wrap gap-3">
-        <Button
-          :disabled="busy || !desktop"
-          @click="run(() => configureFirewall(true))"
-          >Configure firewall access</Button
-        >
-        <Button
-          :disabled="busy || !desktop"
-          variant="ghost"
-          @click="run(() => configureFirewall(false))"
-          >Remove firewall rule</Button
-        >
-      </div>
-      <p v-if="networkSetupResult" class="hint mt-3" role="status">
-        {{ networkSetupResult }}
-      </p>
-    </template>
-    <template v-else-if="snapshot?.platform === 'macos'">
-      <p class="hint mt-3">
-        Allow DisplayFlow's Local Network prompt when pairing. If access was
-        declined, enable it in System Settings → Privacy &amp; Security → Local
-        Network. File access is limited to your chosen log and external module
-        files; pairing credentials use the OS keychain. Full Disk Access is not
-        required.
-      </p>
-      <Button
-        class="mt-4"
-        :disabled="busy || !desktop"
-        @click="run(() => call('open_network_permissions'))"
-        >Open network privacy settings</Button
-      >
-    </template>
-    <p v-else class="hint mt-3">
-      Configure networking in the installed desktop application.
-    </p>
-  </section>
-  <section class="panel mt-6 max-w-3xl p-6">
-    <h2 class="section-title">Startup & background operation</h2>
-    <div class="mt-4 flex items-center justify-between gap-6">
-      <div>
-        <h3 class="text-sm font-medium">Start at login</h3>
-        <p class="hint mt-1">
-          Launch in the menu bar or notification area without opening the
-          window. Changes apply immediately.
+    </PageSection>
+    <PageSection
+      title="Local network access"
+      description="DisplayFlow runs as your normal user. No SSH service or router forwarding is needed."
+      class="border-t border-default pt-6"
+    >
+      <template v-if="snapshot?.platform === 'windows'"
+        ><p class="hint">
+          Save the listen port first. Firewall setup requests administrator
+          approval for the installed app on Private and Domain local networks.
+          Update the rule after changing the port or installation path.
         </p>
-      </div>
-      <Toggle
-        :model-value="startupEnabled"
-        :disabled="
-          busy || !startupReady || (!startupCanEnable && !startupEnabled)
-        "
-        label="Start DisplayFlow at login"
-        @update:model-value="
-          (enabled) =>
-            run(
-              () => setStartup(enabled),
-              enabled ? 'Start at login enabled' : 'Start at login disabled',
-            )
-        "
-      />
-    </div>
-    <p v-if="!desktop || (startupReady && !startupCanEnable)" class="hint mt-3">
-      Install a release build to enable login startup.
-    </p>
-    <p v-if="startupError" class="hint mt-3 text-red-600">{{ startupError }}</p>
-    <p class="hint mt-3">
-      Install the app in its permanent location before enabling this option.
-      Startup preserves your pause setting; confirm the currently visible
-      computer after restarting before routing can switch an input.
-    </p>
-  </section>
-  <section class="panel mt-6 max-w-3xl p-6">
-    <h2 class="section-title">macOS · BetterDisplay provider</h2>
-    <p class="hint mt-2">
-      BetterDisplay must be installed, running, and accept CLI commands.
-      Register its exact display name here. Standard input selection uses MCCS
-      0x60; vendor-specific behavior belongs in an external provider.
-    </p>
-    <label for="betterdisplay-name" class="label mt-4"
-      >Exact display name</label
-    >
-    <div class="flex gap-3">
-      <input
-        id="betterdisplay-name"
-        v-model="target"
-        class="field"
-        placeholder="Display name shown in BetterDisplay"
-      /><Button
-        :disabled="busy || !target"
-        @click="run(register, 'Display registered')"
-        ><Plus :size="14" />Register</Button
+        <div class="flex flex-wrap gap-2">
+          <Button
+            :disabled="busy || !desktop"
+            @click="run(() => configureFirewall(true))"
+            >Configure firewall access</Button
+          ><Button
+            :disabled="busy || !desktop"
+            variant="ghost"
+            @click="run(() => configureFirewall(false))"
+            >Remove firewall rule</Button
+          >
+        </div>
+        <p v-if="networkSetupResult" class="hint" role="status">
+          {{ networkSetupResult }}
+        </p></template
       >
-    </div>
-    <div
-      v-for="m in settings?.manualMonitors"
-      :key="m.id"
-      class="mt-3 flex items-center justify-between rounded-lg bg-stone-50 px-3 py-2"
+      <template v-else-if="snapshot?.platform === 'macos'"
+        ><p class="hint">
+          Allow Local Network access when pairing. DisplayFlow also needs its
+          selected log and module files; Full Disk Access is unnecessary.
+        </p>
+        <Button
+          class="self-start"
+          :disabled="busy || !desktop"
+          @click="run(() => call('open_network_permissions'))"
+          >Open network privacy settings</Button
+        ></template
+      >
+      <p v-else class="hint">
+        Configure network access in the installed desktop app.
+      </p>
+    </PageSection>
+    <PageSection
+      title="Startup & background operation"
+      class="border-t border-default pt-6"
     >
-      <span class="text-sm">{{ m.name }}</span
-      ><Button
-        variant="ghost"
-        aria-label="Remove registered monitor"
-        @click="
-          run(async () => {
-            await mutate((s) => {
-              s.manualMonitors = s.manualMonitors.filter((x) => x.id !== m.id)
-            })
-            await refresh(true)
-          })
-        "
-        ><Trash2 :size="13"
-      /></Button>
-    </div>
-  </section>
-  <p class="hint mt-5 max-w-3xl">
-    Closing the window keeps DisplayFlow running. Use its tray or menu bar menu
-    to pause switching or quit.
-  </p>
+      <div class="flex items-start justify-between gap-4">
+        <div class="flex flex-col gap-2">
+          <h3 class="text-sm font-medium">Start at login</h3>
+          <p class="hint">
+            Launch in the menu bar or notification area with the window hidden.
+            Changes apply immediately.
+          </p>
+        </div>
+        <Toggle
+          :model-value="startupEnabled"
+          :disabled="
+            busy || !startupReady || (!startupCanEnable && !startupEnabled)
+          "
+          label="Start DisplayFlow at login"
+          @update:model-value="
+            (enabled) =>
+              run(
+                () => setStartup(enabled),
+                enabled ? 'Start at login enabled' : 'Start at login disabled',
+              )
+          "
+        />
+      </div>
+      <p v-if="!desktop || (startupReady && !startupCanEnable)" class="hint">
+        Install a release build to enable login startup.
+      </p>
+      <p v-if="startupError" class="text-xs text-error" role="alert">
+        {{ startupError }}
+      </p>
+      <p class="hint">
+        Keep the app in its permanent location. Restarting clears the assumed
+        input; confirm the visible computer or use a reliable detection provider
+        before switching.
+      </p>
+    </PageSection>
+    <PageSection
+      title="BetterDisplay provider"
+      description="On macOS, keep BetterDisplay running with CLI access enabled. Register its exact display name for standard MCCS input selection."
+      class="border-t border-default pt-6"
+    >
+      <div class="flex flex-col gap-2">
+        <label for="betterdisplay-name" class="label">Exact display name</label>
+        <div class="flex flex-wrap gap-3">
+          <UInput
+            id="betterdisplay-name"
+            v-model="target"
+            class="min-w-0 flex-1 basis-64"
+            placeholder="Display name shown in BetterDisplay"
+          /><Button
+            :disabled="busy || !target"
+            @click="run(register, 'Display registered')"
+            ><Plus :size="14" />Register</Button
+          >
+        </div>
+      </div>
+      <div class="flex flex-col divide-y divide-default">
+        <div
+          v-for="m in settings?.manualMonitors"
+          :key="m.id"
+          class="flex min-w-0 items-center justify-between gap-3 py-3"
+        >
+          <span class="text-sm break-words">{{ m.name }}</span
+          ><Button
+            variant="ghost"
+            aria-label="Remove registered monitor"
+            @click="
+              run(async () => {
+                await mutate((s) => {
+                  s.manualMonitors = s.manualMonitors.filter(
+                    (x) => x.id !== m.id,
+                  )
+                })
+                await refresh(true)
+              })
+            "
+            ><Trash2 :size="14"
+          /></Button>
+        </div>
+      </div>
+    </PageSection>
+    <p class="hint">
+      Closing the window keeps the agent running. Use the tray or menu bar to
+      pause switching or quit.
+    </p>
+  </div>
 </template>

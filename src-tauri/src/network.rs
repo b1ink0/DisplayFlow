@@ -1,7 +1,8 @@
 use crate::{
+    credentials,
     model::{now, Peer},
     providers,
-    store::{secret_get, secret_optional, secret_set, Shared},
+    store::Shared,
 };
 use base64::{engine::general_purpose::STANDARD as B64, Engine};
 use rand::RngCore;
@@ -36,14 +37,14 @@ fn identity(state: &Shared) -> Result<(String, String), String> {
     let _guard = state.identity_lock.lock().unwrap();
     let id = state.config().device_id;
     let entry = format!("identity-{id}");
-    match secret_optional(&entry)? {
+    match credentials::optional(state, &entry)? {
         Some(value) => serde_json::from_str(&value).map_err(|e| e.to_string()),
         None => {
             let rcgen::CertifiedKey { cert, key_pair } =
                 rcgen::generate_simple_self_signed(vec!["displayflow.local".into()])
                     .map_err(|e| e.to_string())?;
             let value = (B64.encode(cert.der()), B64.encode(key_pair.serialize_der()));
-            secret_set(&entry, &serde_json::to_string(&value).unwrap())?;
+            credentials::set(state, &entry, &serde_json::to_string(&value).unwrap())?;
             Ok(value)
         }
     }
@@ -95,6 +96,15 @@ async fn exchange(peer: &Peer, payload: Value) -> Result<Value, String> {
     let config = rustls::ClientConfig::builder()
         .with_root_certificates(roots)
         .with_no_client_auth();
+    let input_read = payload["operation"] == "getInput";
+    let shared_read = payload["operation"] == "getRoute" || payload["operation"] == "pushRoute";
+    let timeout = if input_read || shared_read {
+        6
+    } else if payload["operation"] == "selectRoute" {
+        35
+    } else {
+        20
+    };
     let work = async {
         let stream = TcpStream::connect((peer.address.as_str(), peer.port))
             .await
@@ -140,11 +150,14 @@ async fn exchange(peer: &Peer, payload: Value) -> Result<Value, String> {
         }
         Ok(result)
     };
-    tokio::time::timeout(Duration::from_secs(20), work)
+    tokio::time::timeout(Duration::from_secs(timeout), work)
         .await
         .map_err(|_| {
-            "Peer timed out; switch outcome is unknown. Reconfirm the active input before retrying."
-                .to_string()
+            if input_read {
+                "Peer input query timed out; no input evidence was obtained.".to_string()
+            } else {
+                "Peer timed out; switch outcome is unknown. Reconfirm the active input before retrying.".to_string()
+            }
         })?
 }
 pub async fn pair(
@@ -170,7 +183,8 @@ pub async fn pair(
         certificate,
     };
     let reverse_token = token();
-    secret_set(
+    credentials::set(
+        state,
         &format!("inbound-{}-{}", settings.device_id, invite.peer.id),
         &reverse_token,
     )?;
@@ -182,7 +196,8 @@ pub async fn pair(
     let credential = response["token"]
         .as_str()
         .ok_or("Pairing response missing credential")?;
-    secret_set(
+    credentials::set(
+        state,
         &format!("outbound-{}-{}", settings.device_id, invite.peer.id),
         credential,
     )?;
@@ -204,7 +219,10 @@ pub async fn remote(
     let id = state.config().device_id;
     payload["operation"] = json!(operation);
     payload["deviceId"] = json!(id);
-    payload["token"] = json!(secret_get(&format!("outbound-{id}-{}", peer.id))?);
+    payload["token"] = json!(credentials::get(
+        state,
+        &format!("outbound-{id}-{}", peer.id)
+    )?);
     exchange(peer, payload).await
 }
 async fn handle(state: &Shared, payload: Value) -> Result<Value, String> {
@@ -235,8 +253,8 @@ async fn handle(state: &Shared, payload: Value) -> Result<Value, String> {
         }
         let token = token();
         let id = state.config().device_id;
-        secret_set(&format!("inbound-{id}-{}", peer.id), &token)?;
-        secret_set(&format!("outbound-{id}-{}", peer.id), reverse)?;
+        credentials::set(state, &format!("inbound-{id}-{}", peer.id), &token)?;
+        credentials::set(state, &format!("outbound-{id}-{}", peer.id), reverse)?;
         {
             let mut config = state.settings.lock().unwrap();
             config.peers.retain(|p| p.id != peer.id);
@@ -251,12 +269,74 @@ async fn handle(state: &Shared, payload: Value) -> Result<Value, String> {
     if !config.peers.iter().any(|p| p.id == sender) {
         return Err("Unpaired device".into());
     }
-    let expected = secret_get(&format!("inbound-{}-{sender}", config.device_id))?;
+    let expected = credentials::get(state, &format!("inbound-{}-{sender}", config.device_id))?;
     if !equal(&expected, payload["token"].as_str().unwrap_or("")) {
         return Err("Authentication failed".into());
     }
     match operation {
+        "getRoute" | "configureRoute" | "confirmRoute" | "detectRoute" | "selectRoute" => {
+            let id = crate::shared_routes::authorize(state, sender, &payload)?;
+            if operation == "getRoute" {
+                return crate::shared_routes::describe(state, &id).await;
+            }
+            crate::shared_routes::require_coordinator(state, &id)?;
+            match operation {
+                "configureRoute" => {
+                    crate::shared_routes::configure(
+                        state,
+                        &id,
+                        payload["autoDetect"]
+                            .as_bool()
+                            .ok_or("Missing detection setting")?,
+                    )
+                    .await?
+                }
+                "confirmRoute" => {
+                    crate::shared_routes::confirm(
+                        state,
+                        &id,
+                        payload["computer"]
+                            .as_str()
+                            .ok_or("Missing visible computer")?,
+                    )
+                    .await?
+                }
+                "detectRoute" => {
+                    crate::detection::detect(state, &id).await?;
+                }
+                "selectRoute" => {
+                    crate::routing::switch(
+                        state,
+                        &id,
+                        payload["destination"]
+                            .as_str()
+                            .ok_or("Missing destination")?,
+                    )
+                    .await?;
+                }
+                _ => unreachable!(),
+            }
+            crate::shared_routes::describe(state, &id).await
+        }
+        "pushRoute" => crate::shared_routes::receive(state, sender, &payload).await,
         "inventory" => Ok(json!({"ok":true,"monitors":providers::enumerate(state).await?})),
+        "getInput" => {
+            let monitor = payload["monitorId"].as_str().ok_or("Missing monitor")?;
+            if !config.routes.iter().any(|r| {
+                r.attachments
+                    .iter()
+                    .any(|a| a.device_id == config.device_id && a.monitor_id == monitor)
+            }) {
+                return Err(
+                    "Monitor is not allowed by this computer's local route configuration".into(),
+                );
+            }
+            let _guard = state.switch_lock.lock().await;
+            let reading = providers::get_input(state, monitor).await?;
+            Ok(
+                json!({"ok":true,"input":reading.input,"activeConnection":reading.active_connection}),
+            )
+        }
         "setInput" => {
             if config.paused {
                 return Err("Receiving agent is paused".into());
@@ -372,7 +452,7 @@ pub async fn serve(state: Shared) {
                             .map_err(|e| e.to_string())?;
                         Ok::<_, String>(())
                     };
-                    let _ = tokio::time::timeout(Duration::from_secs(20), work).await;
+                    let _ = tokio::time::timeout(Duration::from_secs(35), work).await;
                 });
             }
         }

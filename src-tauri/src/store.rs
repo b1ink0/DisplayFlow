@@ -17,6 +17,13 @@ pub struct Runtime {
     pub monitors: Mutex<Vec<Monitor>>,
     pub save_lock: Mutex<()>,
     pub identity_lock: Mutex<()>,
+    pub credentials: Mutex<Option<crate::credentials::Vault>>,
+    pub detection_lock: tokio::sync::Mutex<()>,
+    pub route_detection: Mutex<std::collections::HashMap<String, DetectionStatus>>,
+    pub route_sync: Mutex<std::collections::HashMap<String, RouteSyncStatus>>,
+    pub shared_versions: Mutex<std::collections::HashMap<String, (String, u64)>>,
+    pub instance_id: String,
+    pub publish_lock: tokio::sync::Mutex<()>,
 }
 pub type Shared = Arc<Runtime>;
 impl Runtime {
@@ -36,6 +43,9 @@ impl Runtime {
         // Reconfirm visible inputs after restart, including intervening manual changes.
         for route in &mut settings.routes {
             route.active_computer = None;
+            if route.coordinator_device_id.is_none() && !settings.deskflow_log.is_empty() {
+                route.coordinator_device_id = Some(settings.device_id.clone());
+            }
         }
         Ok(Arc::new(Self {
             settings: Mutex::new(settings),
@@ -49,6 +59,13 @@ impl Runtime {
             monitors: Mutex::new(vec![]),
             save_lock: Mutex::new(()),
             identity_lock: Mutex::new(()),
+            credentials: Mutex::new(None),
+            detection_lock: tokio::sync::Mutex::new(()),
+            route_detection: Mutex::new(std::collections::HashMap::new()),
+            route_sync: Mutex::new(std::collections::HashMap::new()),
+            shared_versions: Mutex::new(std::collections::HashMap::new()),
+            instance_id: uuid::Uuid::new_v4().to_string(),
+            publish_lock: tokio::sync::Mutex::new(()),
         }))
     }
     pub fn save(&self) -> Result<(), String> {
@@ -73,30 +90,5 @@ impl Runtime {
     }
     pub fn config(&self) -> Settings {
         self.settings.lock().unwrap().clone()
-    }
-}
-pub fn secret_set(name: &str, value: &str) -> Result<(), String> {
-    keyring::Entry::new("dev.displayflow.desktop", name)
-        .map_err(|e| e.to_string())?
-        .set_password(value)
-        .map_err(|e| format!("OS credential storage: {e}"))
-}
-pub fn secret_get(name: &str) -> Result<String, String> {
-    keyring::Entry::new("dev.displayflow.desktop", name)
-        .map_err(|e| e.to_string())?
-        .get_password()
-        .map_err(|e| format!("OS credential storage: {e}"))
-}
-pub fn secret_remove(name: &str) {
-    if let Ok(entry) = keyring::Entry::new("dev.displayflow.desktop", name) {
-        let _ = entry.delete_credential();
-    }
-}
-pub fn secret_optional(name: &str) -> Result<Option<String>, String> {
-    let entry = keyring::Entry::new("dev.displayflow.desktop", name).map_err(|e| e.to_string())?;
-    match entry.get_password() {
-        Ok(value) => Ok(Some(value)),
-        Err(keyring::Error::NoEntry) => Ok(None),
-        Err(e) => Err(format!("OS credential storage: {e}")),
     }
 }

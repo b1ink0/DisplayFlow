@@ -1,4 +1,5 @@
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref, reactive } from 'vue'
+import type { ModuleResponse } from '@displayflow/module-sdk'
 import { call } from '@/services/bridge'
 import type { Settings, Snapshot } from '@/types'
 
@@ -7,6 +8,15 @@ export function useWorkspace() {
   const busy = ref(false)
   const error = ref('')
   const notice = ref('')
+  const panelStates = new Map<
+    string,
+    { monitorId: string; result: ModuleResponse | null }
+  >()
+  function panelState(key: string) {
+    if (!panelStates.has(key))
+      panelStates.set(key, reactive({ monitorId: '', result: null }))
+    return panelStates.get(key)!
+  }
   const settings = computed(() => snapshot.value?.settings)
   let timer: ReturnType<typeof setInterval> | undefined
   let refreshing = false
@@ -64,5 +74,16 @@ export function useWorkspace() {
     }, 2500)
   })
   onUnmounted(() => clearInterval(timer))
-  return { snapshot, settings, busy, error, notice, run, refresh, save, mutate }
+  return {
+    snapshot,
+    settings,
+    busy,
+    error,
+    notice,
+    run,
+    refresh,
+    save,
+    mutate,
+    panelState,
+  }
 }

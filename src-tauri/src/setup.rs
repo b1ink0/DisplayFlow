@@ -47,6 +47,20 @@ enum Operation {
         #[serde(rename = "peerId")]
         peer_id: String,
     },
+    Detect {
+        #[serde(rename = "routeId")]
+        route_id: String,
+    },
+    AutoDetect {
+        #[serde(rename = "routeId")]
+        route_id: String,
+        enabled: bool,
+    },
+    Confirm {
+        #[serde(rename = "routeId")]
+        route_id: String,
+        computer: String,
+    },
     Startup {
         enabled: bool,
     },
@@ -137,6 +151,17 @@ async fn execute(app: &AppHandle, request: Request) -> Result<Value, String> {
         }
         Operation::Inventory { peer_id } => {
             Ok(json!({"monitors": crate::peer_inventory(app.state(), peer_id).await?}))
+        }
+        Operation::Detect { route_id } => {
+            Ok(json!({"detection": crate::shared_routes::detect(&state, &route_id).await?}))
+        }
+        Operation::AutoDetect { route_id, enabled } => {
+            crate::shared_routes::configure(&state, &route_id, enabled).await?;
+            Ok(json!({"message":"Shared detection setting updated"}))
+        }
+        Operation::Confirm { route_id, computer } => {
+            crate::shared_routes::confirm(&state, &route_id, &computer).await?;
+            Ok(json!({"message":"Visible input confirmation shared"}))
         }
         Operation::Startup { enabled } => {
             Ok(json!({"startup": crate::startup::set_startup(app.clone(), enabled)?}))

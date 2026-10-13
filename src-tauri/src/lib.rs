@@ -1,5 +1,7 @@
 mod access;
+mod credentials;
 mod deskflow;
+mod detection;
 mod lifecycle;
 mod model;
 mod modules;
@@ -7,6 +9,7 @@ mod network;
 mod providers;
 mod routing;
 mod setup;
+mod shared_routes;
 mod startup;
 mod store;
 
@@ -28,10 +31,12 @@ async fn snapshot(state: State<'_, Shared>, refresh: bool) -> Result<Snapshot, S
         platform: std::env::consts::OS.into(),
         agent_status: state.agent_status.lock().unwrap().clone(),
         log_status: state.log_status.lock().unwrap().clone(),
+        route_detection: state.route_detection.lock().unwrap().clone(),
+        route_sync: state.route_sync.lock().unwrap().clone(),
     })
 }
 #[tauri::command]
-async fn save_settings(state: State<'_, Shared>, settings: Settings) -> Result<(), String> {
+async fn save_settings(state: State<'_, Shared>, mut settings: Settings) -> Result<(), String> {
     let _guard = state.switch_lock.lock().await;
     if settings.computer_name.trim().is_empty() || settings.computer_name.len() > 128 {
         return Err("Enter the exact Deskflow computer name (1–128 characters)".into());
@@ -44,6 +49,11 @@ async fn save_settings(state: State<'_, Shared>, settings: Settings) -> Result<(
     }
     let mut route_ids = std::collections::HashSet::new();
     for route in &settings.routes {
+        if route.coordinator_device_id.as_ref().is_some_and(|id| {
+            id != &settings.device_id && !settings.peers.iter().any(|p| &p.id == id)
+        }) {
+            return Err("Route coordinator must be this computer or a paired computer".into());
+        }
         if route.id.is_empty()
             || route.id.len() > 128
             || !route_ids.insert(&route.id)
@@ -82,6 +92,16 @@ async fn save_settings(state: State<'_, Shared>, settings: Settings) -> Result<(
             "Registered displays need an exact BetterDisplay name (1–128 characters)".into(),
         );
     }
+    let previous = state.config().routes;
+    for route in &mut settings.routes {
+        if let Some(old) = previous.iter().find(|r| r.id == route.id) {
+            if old.auto_detect != route.auto_detect
+                && shared_routes::fingerprint(old) == shared_routes::fingerprint(route)
+            {
+                route.active_computer = old.active_computer.clone();
+            }
+        }
+    }
     {
         let mut current = state.settings.lock().unwrap();
         if current.revision != settings.revision {
@@ -95,7 +115,45 @@ async fn save_settings(state: State<'_, Shared>, settings: Settings) -> Result<(
         current.routes = settings.routes;
         current.manual_monitors = settings.manual_monitors;
     }
-    state.save()
+    state.route_detection.lock().unwrap().retain(|id, _| {
+        previous.iter().find(|r| &r.id == id).is_some_and(|old| {
+            state
+                .config()
+                .routes
+                .iter()
+                .find(|r| &r.id == id)
+                .is_some_and(|current| {
+                    shared_routes::fingerprint(old) == shared_routes::fingerprint(current)
+                        && old.active_computer == current.active_computer
+                })
+        })
+    });
+    state.save()?;
+    for route in state.config().routes {
+        shared_routes::changed(&state, &route.id);
+    }
+    drop(_guard);
+    for route in state.config().routes {
+        if let Some(old) = previous.iter().find(|r| r.id == route.id) {
+            if old.auto_detect != route.auto_detect {
+                shared_routes::configure(&state, &route.id, route.auto_detect).await?;
+            } else if old.active_computer != route.active_computer
+                && route.active_computer.is_some()
+            {
+                shared_routes::confirm(
+                    &state,
+                    &route.id,
+                    route.active_computer.as_deref().unwrap(),
+                )
+                .await?;
+            } else if route.coordinator_device_id.as_deref() == Some(&state.config().device_id) {
+                shared_routes::publish(&state, &route.id).await;
+            }
+        } else if route.coordinator_device_id.as_deref() == Some(&state.config().device_id) {
+            shared_routes::publish(&state, &route.id).await;
+        }
+    }
+    Ok(())
 }
 #[tauri::command]
 fn inspect_module(path: String) -> Result<MountedModule, String> {
@@ -173,6 +231,21 @@ async fn select_destination(
     routing::switch(&state, &route_id, &destination).await
 }
 #[tauri::command]
+async fn detect_input(
+    state: State<'_, Shared>,
+    route_id: String,
+) -> Result<DetectionStatus, String> {
+    shared_routes::detect(&state, &route_id).await
+}
+#[tauri::command]
+async fn confirm_input(
+    state: State<'_, Shared>,
+    route_id: String,
+    computer: String,
+) -> Result<(), String> {
+    shared_routes::confirm(&state, &route_id, &computer).await
+}
+#[tauri::command]
 async fn panel_action(
     state: State<'_, Shared>,
     module_id: String,
@@ -237,9 +310,14 @@ async fn pair_peer(
 #[tauri::command]
 fn remove_peer(state: State<'_, Shared>, id: String) -> Result<(), String> {
     let own = state.config().device_id;
+    credentials::remove(
+        &state,
+        &[
+            format!("inbound-{own}-{id}"),
+            format!("outbound-{own}-{id}"),
+        ],
+    )?;
     state.settings.lock().unwrap().peers.retain(|p| p.id != id);
-    store::secret_remove(&format!("inbound-{own}-{id}"));
-    store::secret_remove(&format!("outbound-{own}-{id}"));
     state.save()
 }
 #[tauri::command]
@@ -279,11 +357,13 @@ pub fn run() {
                 lifecycle::reopen(app.handle());
             }
             tauri::async_runtime::spawn(network::serve(state.clone()));
+            tauri::async_runtime::spawn(detection::watch(state.clone()));
+            tauri::async_runtime::spawn(shared_routes::watch(state.clone()));
             tauri::async_runtime::spawn(deskflow::watch(state));
             setup::dispatch(app.handle(), &std::env::args().collect::<Vec<_>>());
             Ok(())
         })
         .on_window_event(|window, event| { if let tauri::WindowEvent::CloseRequested { api, .. } = event { api.prevent_close(); lifecycle::hide(window.app_handle()); } })
-        .invoke_handler(tauri::generate_handler![snapshot, save_settings, inspect_module, mount_module, unmount_module, module_action, panel_action, select_destination, create_invitation, pair_peer, remove_peer, peer_inventory, startup::startup_status, startup::set_startup, access::configure_firewall, access::open_network_permissions])
+        .invoke_handler(tauri::generate_handler![snapshot, save_settings, inspect_module, mount_module, unmount_module, module_action, panel_action, select_destination, detect_input, confirm_input, create_invitation, pair_peer, remove_peer, peer_inventory, startup::startup_status, startup::set_startup, access::configure_firewall, access::open_network_permissions])
         .run(tauri::generate_context!()).expect("DisplayFlow failed to start");
 }

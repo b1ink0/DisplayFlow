@@ -7,7 +7,9 @@ export interface ModuleManifest {
   description: string
   executable: string
   arguments: string[]
-  capabilities: ('enumerate' | 'setInput' | 'inspect' | 'recover' | 'action')[]
+  capabilities: (
+    'enumerate' | 'getInput' | 'setInput' | 'inspect' | 'recover' | 'action'
+  )[]
   timeoutSeconds?: number
   recoveryTimeoutSeconds?: number
   ui?: {
@@ -41,6 +43,7 @@ export interface InputPreset {
 export type ModuleRequest =
   | { apiVersion: 1; operation: 'enumerate' }
   | { apiVersion: 1; operation: 'inspect'; monitorId: string }
+  | { apiVersion: 1; operation: 'getInput'; monitorId: string }
   | { apiVersion: 1; operation: 'setInput'; monitorId: string; input: number }
   | { apiVersion: 1; operation: 'recover'; monitorId: string; confirmed: true }
   | {
@@ -55,6 +58,8 @@ export interface ModuleResponse {
   ok: boolean
   message?: string
   monitors?: Monitor[]
+  input?: number
+  activeConnection?: boolean
   /** Use unknown when the current recovery state cannot be verified. */
   recoveryState?: 'unknown' | 'required' | 'applied' | 'notApplicable'
   fields?: Record<string, string | number | boolean | null>

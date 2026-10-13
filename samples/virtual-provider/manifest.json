@@ -6,7 +6,7 @@
   "description": "A working module example with a simulated monitor and contributed tools tab. No hardware access.",
   "executable": "provider",
   "arguments": [],
-  "capabilities": ["enumerate", "setInput", "inspect", "action"],
+  "capabilities": ["enumerate", "getInput", "setInput", "inspect", "action"],
   "ui": {
     "panels": [
       {

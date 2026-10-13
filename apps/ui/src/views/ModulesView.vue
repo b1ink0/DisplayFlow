@@ -1,13 +1,8 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
-import {
-  FolderInput,
-  Puzzle,
-  ShieldCheck,
-  Trash2,
-  Stethoscope,
-  Wrench,
-} from 'lucide-vue-next'
+import UInput from '@nuxt/ui/components/Input.vue'
+import UCheckbox from '@nuxt/ui/components/Checkbox.vue'
+import { ref, computed, watch } from 'vue'
+import { FolderInput, Trash2, Stethoscope, Wrench } from 'lucide-vue-next'
 import { useApp } from '@/composables/context'
 import { call, desktop } from '@/services/bridge'
 import type { MountedModule } from '@/types'
@@ -15,8 +10,24 @@ import Button from '@/components/ui/Button.vue'
 import Badge from '@/components/ui/Badge.vue'
 import Modal from '@/components/ui/Modal.vue'
 import ModuleResult from '@/components/ModuleResult.vue'
+import PageSection from '@/components/product/PageSection.vue'
+import ListToolbar from '@/components/product/ListToolbar.vue'
+import EmptyState from '@/components/product/EmptyState.vue'
+import Disclosure from '@/components/product/Disclosure.vue'
+import UPagination from '@nuxt/ui/components/Pagination.vue'
 import type { ModuleResponse } from '@displayflow/module-sdk'
 const { settings, snapshot, busy, run, refresh } = useApp()
+const page = ref(1)
+const modules = computed(() =>
+  (settings.value?.modules ?? []).slice((page.value - 1) * 8, page.value * 8),
+)
+watch(
+  () => settings.value?.modules.length ?? 0,
+  (count) => {
+    page.value = Math.max(1, Math.min(page.value, Math.ceil(count / 8)))
+  },
+)
+const monitorLimits = ref<Record<string, number>>({})
 const path = ref('')
 const reviewed = ref<MountedModule | null>(null)
 const reviewOpen = ref(false)
@@ -62,199 +73,202 @@ async function action(monitorId: string, operation: string) {
 }
 </script>
 <template>
-  <section class="panel mb-6 p-6">
-    <div class="flex gap-4">
-      <div
-        class="flex size-12 shrink-0 items-center justify-center rounded-xl bg-violet-50 text-violet-600"
-      >
-        <Puzzle :size="24" />
-      </div>
-      <div>
-        <h2 class="section-title">Monitor modules</h2>
-        <p class="mt-2 max-w-2xl text-sm leading-relaxed text-stone-500">
-          Add input providers, diagnostics, and tools for your monitors.
-        </p>
-      </div>
-    </div>
-  </section>
-  <h2 class="section-title mb-4">Added modules</h2>
-  <div
-    v-if="!settings?.modules.length"
-    class="panel mb-6 px-6 py-9 text-center"
-  >
-    <Puzzle :size="28" class="mx-auto mb-3 text-stone-300" />
-    <p class="text-sm font-medium">No modules added</p>
-    <p class="hint mt-2">
-      Add a module below to extend the built-in input providers.
-    </p>
-  </div>
-  <div class="mb-6 space-y-4">
-    <section
-      v-for="module in settings?.modules"
-      :key="module.manifest.id"
-      class="panel p-5"
-    >
-      <div class="flex items-start justify-between">
-        <div>
-          <h3 class="font-semibold">
-            {{ module.manifest.name }}
-            <span class="ml-1 text-xs font-normal text-stone-400"
-              >v{{ module.manifest.version }}</span
-            >
-          </h3>
-          <p class="hint mt-2">{{ module.manifest.description }}</p>
-          <p class="mt-2 font-mono text-[10px] break-all text-stone-400">
-            {{ module.path }}
-          </p>
-        </div>
-        <Button
-          variant="ghost"
-          aria-label="Remove module"
-          :disabled="busy"
-          @click="
-            run(async () => {
-              await call('unmount_module', { id: module.manifest.id })
-              await refresh(true)
-            }, 'Module removed')
-          "
-          ><Trash2 :size="14"
-        /></Button>
-      </div>
-      <div class="mt-4 flex gap-2">
-        <Badge
-          v-for="capability in module.manifest.capabilities"
-          :key="capability"
-          >{{ capability }}</Badge
+  <div class="flex min-w-0 flex-col gap-6">
+    <PageSection>
+      <ListToolbar
+        title="Added modules"
+        :count="settings?.modules.length ?? 0"
+      />
+      <EmptyState
+        v-if="!settings?.modules.length"
+        title="No modules added"
+        description="Built-in providers are ready to use. Add a module below when your monitor needs another provider or tool."
+        icon="i-lucide-puzzle"
+      />
+      <div class="flex flex-col divide-y divide-default">
+        <section
+          v-for="module in modules"
+          :key="module.manifest.id"
+          class="py-3"
         >
-      </div>
-      <div
-        v-for="monitor in snapshot?.monitors.filter(
-          (m) => m.provider === module.manifest.id,
-        )"
-        :key="monitor.id"
-        class="mt-4 border-t border-stone-100 pt-4"
-      >
-        <div class="flex items-center justify-between">
-          <p class="text-sm font-medium">{{ monitor.name }}</p>
-          <div class="flex gap-2">
-            <Button
-              v-if="module.manifest.capabilities.includes('inspect')"
-              :disabled="busy"
-              @click="run(() => action(monitor.id, 'inspect'))"
-              ><Stethoscope :size="13" />Check status</Button
-            ><Button
-              v-if="module.manifest.capabilities.includes('recover')"
-              :disabled="busy"
-              @click="beginRecovery(monitor.id)"
-              ><Wrench :size="13" />{{
-                module.manifest.ui?.recovery?.label ?? 'Apply recovery'
-              }}</Button
+          <Disclosure
+            :title="module.manifest.name"
+            :description="
+              'v' +
+              module.manifest.version +
+              ' · ' +
+              module.manifest.description
+            "
+          >
+            <template #actions
+              ><Button
+                variant="ghost"
+                aria-label="Remove module"
+                :disabled="busy"
+                @click="
+                  run(async () => {
+                    await call('unmount_module', { id: module.manifest.id })
+                    await refresh(true)
+                  }, 'Module removed')
+                "
+                ><Trash2 :size="14" /></Button
+            ></template>
+            <p class="font-mono text-xs break-all text-muted">
+              {{ module.path }}
+            </p>
+            <div class="flex flex-wrap gap-2">
+              <Badge
+                v-for="capability in module.manifest.capabilities"
+                :key="capability"
+                >{{ capability }}</Badge
+              >
+            </div>
+            <div
+              v-for="monitor in snapshot?.monitors
+                .filter((m) => m.provider === module.manifest.id)
+                .slice(0, monitorLimits[module.manifest.id] ?? 50)"
+              :key="monitor.id"
+              class="flex flex-col gap-4 border-t border-default pt-4"
             >
-          </div>
-        </div>
-        <ModuleResult
-          v-if="results[monitor.id]"
-          :result="results[monitor.id]!"
-        />
+              <div class="flex flex-wrap items-center justify-between gap-3">
+                <p class="min-w-0 flex-1 text-sm font-medium break-words">
+                  {{ monitor.name }}
+                </p>
+                <div class="flex flex-wrap gap-2">
+                  <Button
+                    v-if="module.manifest.capabilities.includes('inspect')"
+                    :disabled="busy"
+                    @click="run(() => action(monitor.id, 'inspect'))"
+                    ><Stethoscope :size="14" />Check status</Button
+                  ><Button
+                    v-if="module.manifest.capabilities.includes('recover')"
+                    :disabled="busy"
+                    @click="beginRecovery(monitor.id)"
+                    ><Wrench :size="14" />{{
+                      module.manifest.ui?.recovery?.label ?? 'Apply recovery'
+                    }}</Button
+                  >
+                </div>
+              </div>
+              <ModuleResult
+                v-if="results[monitor.id]"
+                :result="results[monitor.id]!"
+              />
+            </div>
+            <Button
+              v-if="
+                (snapshot?.monitors.filter(
+                  (m) => m.provider === module.manifest.id,
+                ).length ?? 0) > (monitorLimits[module.manifest.id] ?? 50)
+              "
+              variant="ghost"
+              class="self-start"
+              @click="
+                monitorLimits[module.manifest.id] =
+                  (monitorLimits[module.manifest.id] ?? 50) + 50
+              "
+              >Show more displays</Button
+            >
+          </Disclosure>
+        </section>
       </div>
-    </section>
-  </div>
-  <section class="panel p-6">
-    <h2 class="section-title mb-2">Add a module</h2>
-    <p class="hint mb-4">
-      Choose a directory containing a
-      <code>displayflow-module.json</code> manifest and its executable.
-    </p>
-    <label for="module-path" class="label">Module directory</label>
-    <div class="flex gap-3">
-      <input
-        id="module-path"
-        v-model="path"
-        class="field"
-        placeholder="Full path to the module folder"
-      /><Button :disabled="busy || !desktop || !path" @click="run(inspect)"
-        ><FolderInput :size="14" />Review</Button
-      >
-    </div>
-  </section>
-  <div class="mt-5 flex gap-3 rounded-lg bg-stone-100/70 p-4">
-    <ShieldCheck :size="18" class="shrink-0 text-stone-400" />
-    <p class="hint">
-      Modules run with your account’s permissions. Add only modules you trust.
-    </p>
-  </div>
-  <Modal
-    v-model="reviewOpen"
-    title="Add this module?"
-    description="This executable will run with your account’s permissions."
-    ><template v-if="reviewed"
-      ><dl class="space-y-3 text-sm">
-        <div>
-          <dt class="label">Module</dt>
-          <dd>
-            {{ reviewed.manifest.name }} · {{ reviewed.manifest.version }}
-          </dd>
+      <UPagination
+        v-if="(settings?.modules.length ?? 0) > 8"
+        v-model:page="page"
+        :total="settings?.modules.length ?? 0"
+        :items-per-page="8"
+        class="self-end"
+      />
+    </PageSection>
+    <PageSection
+      title="Add a module"
+      description="Choose the directory containing its displayflow-module.json manifest and executable."
+    >
+      <div class="flex flex-col gap-2">
+        <label for="module-path" class="label">Module directory</label>
+        <div class="flex flex-wrap gap-3">
+          <UInput
+            id="module-path"
+            v-model="path"
+            class="min-w-0 flex-1 basis-64"
+            placeholder="Full path to the module folder"
+          /><Button :disabled="busy || !desktop || !path" @click="run(inspect)"
+            ><FolderInput :size="14" />Review module</Button
+          >
         </div>
-        <div>
-          <dt class="label">Executable</dt>
-          <dd class="font-mono text-xs break-all">
-            {{ reviewed.path }} / {{ reviewed.manifest.executable }}
-          </dd>
-        </div>
-        <div>
-          <dt class="label">SHA-256</dt>
-          <dd class="font-mono text-[11px] break-all">
-            {{ reviewed.executableHash }}
-          </dd>
-        </div>
-        <div>
-          <dt class="label">Capabilities</dt>
-          <dd>{{ reviewed.manifest.capabilities.join(', ') }}</dd>
-        </div>
-      </dl>
-      <label class="mt-6 flex items-start gap-3 text-sm"
-        ><input
+      </div>
+      <p class="hint">
+        Modules run with your account’s permissions. Review the executable and
+        add only modules you trust.
+      </p>
+    </PageSection>
+    <Modal
+      v-model="reviewOpen"
+      title="Add this module?"
+      description="This executable will run with your account’s permissions."
+      ><template v-if="reviewed"
+        ><dl class="flex flex-col gap-3 text-sm">
+          <div>
+            <dt class="label">Module</dt>
+            <dd>
+              {{ reviewed.manifest.name }} · {{ reviewed.manifest.version }}
+            </dd>
+          </div>
+          <div>
+            <dt class="label">Executable</dt>
+            <dd class="font-mono text-xs break-all">
+              {{ reviewed.path }} / {{ reviewed.manifest.executable }}
+            </dd>
+          </div>
+          <div>
+            <dt class="label">SHA-256</dt>
+            <dd class="font-mono text-xs break-all">
+              {{ reviewed.executableHash }}
+            </dd>
+          </div>
+          <div>
+            <dt class="label">Capabilities</dt>
+            <dd>{{ reviewed.manifest.capabilities.join(', ') }}</dd>
+          </div>
+        </dl>
+        <UCheckbox
           v-model="trusted"
-          type="checkbox"
-          class="mt-1 accent-violet-600"
-        />I trust this module and its supporting files.</label
-      >
-      <div class="mt-6 flex justify-end gap-2">
-        <Button @click="reviewOpen = false">Cancel</Button
+          label="I trust this module and its supporting files."
+        />
+        <div class="flex justify-end gap-2">
+          <Button @click="reviewOpen = false">Cancel</Button
+          ><Button
+            variant="primary"
+            :disabled="busy || !trusted"
+            @click="run(mount, 'Module added')"
+            >Trust and add</Button
+          >
+        </div></template
+      ></Modal
+    >
+    <Modal
+      v-model="recoveryOpen"
+      :title="recoveryUi?.label ?? 'Run local recovery'"
+      :description="
+        recoveryUi?.description ??
+        'Run this module’s recovery action on the selected monitor.'
+      "
+      ><UCheckbox
+        v-model="visible"
+        :label="
+          recoveryUi?.confirmation ??
+          'This computer’s picture is visible on the selected monitor. Run the recovery action.'
+        "
+      />
+      <div class="mt-4 flex justify-end gap-2">
+        <Button @click="recoveryOpen = false">Cancel</Button
         ><Button
           variant="primary"
-          :disabled="busy || !trusted"
-          @click="run(mount, 'Module added')"
-          >Trust and add</Button
+          :disabled="busy || !visible"
+          @click="run(() => action(recoveryMonitor, 'recover'))"
+          >{{ recoveryUi?.label ?? 'Run recovery' }}</Button
         >
-      </div></template
-    ></Modal
-  >
-  <Modal
-    v-model="recoveryOpen"
-    :title="recoveryUi?.label ?? 'Run local recovery'"
-    :description="
-      recoveryUi?.description ??
-      'Run this module’s recovery action on the selected monitor.'
-    "
-    ><label class="flex items-start gap-3 text-sm leading-relaxed"
-      ><input
-        v-model="visible"
-        type="checkbox"
-        class="mt-1 accent-violet-600"
-      />{{
-        recoveryUi?.confirmation ??
-        'This computer’s picture is visible on the selected monitor. Run the recovery action.'
-      }}</label
+      </div></Modal
     >
-    <div class="mt-6 flex justify-end gap-2">
-      <Button @click="recoveryOpen = false">Cancel</Button
-      ><Button
-        variant="primary"
-        :disabled="busy || !visible"
-        @click="run(() => action(recoveryMonitor, 'recover'))"
-        >{{ recoveryUi?.label ?? 'Run recovery' }}</Button
-      >
-    </div></Modal
-  >
+  </div>
 </template>

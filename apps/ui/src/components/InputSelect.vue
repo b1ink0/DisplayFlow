@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import UInput from '@nuxt/ui/components/Input.vue'
 import { computed, ref, watch } from 'vue'
 import type { InputPreset } from '@displayflow/module-sdk'
 import Select from '@/components/ui/Select.vue'
@@ -55,37 +56,37 @@ function choose(value: string) {
     emit('select-label', preset.label)
   }
 }
-function updateText(event: Event) {
-  text.value = (event.target as HTMLInputElement).value
+function updateText(value: string | number) {
+  text.value = String(value)
   emit('update:modelValue', parseValue(text.value))
 }
 </script>
 <template>
-  <div>
+  <div class="flex flex-col gap-2">
     <Select
       :model-value="selected"
       :options="options"
       label="Input preset"
       @update:model-value="choose"
     />
-    <div v-if="selected === 'custom'" class="mt-2">
+    <div v-if="selected === 'custom'" class="flex flex-col gap-2">
       <label :for="id" class="sr-only">Custom input value</label>
-      <input
+      <UInput
         :id="id"
-        :value="text"
+        :model-value="text"
         class="field font-mono"
         placeholder="0x11 or 17"
         spellcheck="false"
         :aria-invalid="!Number.isInteger(modelValue)"
         :aria-describedby="`${id}-hint`"
-        @input="updateText"
+        @update:model-value="updateText"
       />
     </div>
     <p
       :id="`${id}-hint`"
       :class="[
-        'mt-1.5 text-xs',
-        Number.isInteger(modelValue) ? 'text-stone-400' : 'text-red-600',
+        'text-xs',
+        Number.isInteger(modelValue) ? 'text-muted' : 'text-error',
       ]"
     >
       {{

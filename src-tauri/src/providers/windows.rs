@@ -38,6 +38,13 @@ unsafe extern "system" {
         -> i32;
     fn DestroyPhysicalMonitors(count: u32, monitors: *const Physical) -> i32;
     fn SetVCPFeature(monitor: Handle, code: u8, value: u32) -> i32;
+    fn GetVCPFeatureAndVCPFeatureReply(
+        monitor: Handle,
+        code: u8,
+        kind: *mut u32,
+        current: *mut u32,
+        maximum: *mut u32,
+    ) -> i32;
 }
 struct Entry {
     id: String,
@@ -125,4 +132,29 @@ pub fn set_input(id: &str, input: u16) -> Result<(), String> {
         ));
     }
     Ok(())
+}
+pub fn get_input(id: &str) -> Result<u16, String> {
+    let handles = handles()?;
+    let entry = handles
+        .0
+        .iter()
+        .find(|e| e.id == id)
+        .ok_or("Monitor is unavailable; refresh inventory")?;
+    let (mut kind, mut current, mut maximum) = (0, 0, 0);
+    if unsafe {
+        GetVCPFeatureAndVCPFeatureReply(
+            entry.physical.handle,
+            0x60,
+            &mut kind,
+            &mut current,
+            &mut maximum,
+        )
+    } == 0
+    {
+        return Err(format!(
+            "DDC input read failed: {}",
+            std::io::Error::last_os_error()
+        ));
+    }
+    u16::try_from(current).map_err(|_| "Monitor returned an invalid input value".into())
 }

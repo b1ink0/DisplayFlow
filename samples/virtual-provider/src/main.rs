@@ -33,6 +33,7 @@ fn handle(root: &Path, request: Value) -> Result<Value, String> {
             state["requests"] = json!(state["requests"].as_u64().unwrap_or(0) + 1);
             json!({"ok":true,"message":"Simulated input updated; no physical monitor command was sent."})
         }
+        "getInput" => json!({"ok":true,"input":state["input"],"activeConnection":false}),
         "action" => {
             if request["panelId"] != "sample-tools" {
                 return Err("Unknown panel".into());

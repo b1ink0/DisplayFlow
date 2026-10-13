@@ -13,6 +13,8 @@ export interface Route {
   attachments: Attachment[]
   activeComputer: string | null
   enabled: boolean
+  autoDetect?: boolean
+  coordinatorDeviceId?: string | null
 }
 export interface Peer {
   id: string
@@ -52,4 +54,9 @@ export interface Snapshot {
   platform: string
   agentStatus: string
   logStatus: string
+  routeDetection?: Record<
+    string,
+    { status: string; message: string; checkedAt: number }
+  >
+  routeSync?: Record<string, { status: string; message: string }>
 }
