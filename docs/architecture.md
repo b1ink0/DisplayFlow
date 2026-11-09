@@ -47,7 +47,7 @@ Networking is off by default. Each device generates a self-signed TLS identity. 
 
 The peer API exposes inventory, read-only input queries for locally assigned monitors, and locally authorized input selection. Module panel actions and recovery are local operations. Receiving agents must be resumed and have an enabled route authorizing monitor/input values. Messages are capped at 64 KiB, connections at eight, and exchanges have timeouts. Input setters are not retried after an uncertain response. Binding and invitation addresses use IPv4. Windows provides an administrator-approved firewall setup action in Settings.
 
-Peer revocation is local; remove the peer on both computers to remove both directions. IP addressing and physical wiring assignments are configured manually. Re-pair to change an address or certificate.
+Peer revocation is local; remove the peer on both computers to remove both directions. Local addresses are detected from network interfaces. UDP 24863 discovery advertises device IDs, names and agent ports on the LAN, without credentials. Discovered addresses are untrusted hints; reconnecting clients verify the saved TLS identity and authenticate before persisting an endpoint change. Authenticated incoming requests also refresh the sender address. Requests are never replayed after transmission. Changing a certificate requires a new trusted invitation. Physical wiring assignments remain explicit.
 
 ## Extension points
 

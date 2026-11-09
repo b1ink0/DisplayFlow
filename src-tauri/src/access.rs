@@ -19,11 +19,11 @@ pub async fn configure_firewall(state: State<'_, Shared>, enabled: bool) -> Resu
             .ok_or("Executable path is not valid Unicode")?
             .replace('\'', "''");
         let action = if enabled {
-            format!("New-NetFirewallRule -Name 'DisplayFlow-LAN-Private' -DisplayName 'DisplayFlow private LAN' -Direction Inbound -Action Allow -Protocol TCP -LocalPort {port} -RemoteAddress LocalSubnet -Profile Private,Domain -Program '{exe}' | Out-Null")
+            format!("New-NetFirewallRule -Name 'DisplayFlow-LAN-Private' -DisplayName 'DisplayFlow private LAN' -Direction Inbound -Action Allow -Protocol TCP -LocalPort {port} -RemoteAddress LocalSubnet -Profile Private,Domain -Program '{exe}' | Out-Null; New-NetFirewallRule -Name 'DisplayFlow-Discovery-Private' -DisplayName 'DisplayFlow LAN discovery' -Direction Inbound -Action Allow -Protocol UDP -LocalPort 24863 -RemoteAddress LocalSubnet -Profile Private,Domain -Program '{exe}' | Out-Null")
         } else {
             String::new()
         };
-        let elevated = format!("$ErrorActionPreference='Stop'; try {{ if(Get-NetFirewallRule -Name 'DisplayFlow-LAN-Private' -ErrorAction SilentlyContinue){{Remove-NetFirewallRule -Name 'DisplayFlow-LAN-Private'}}; {action}; exit 0 }} catch {{exit 1}}");
+        let elevated = format!("$ErrorActionPreference='Stop'; try {{ foreach($rule in @('DisplayFlow-LAN-Private','DisplayFlow-Discovery-Private')) {{ if(Get-NetFirewallRule -Name $rule -ErrorAction SilentlyContinue){{Remove-NetFirewallRule -Name $rule}} }}; {action}; exit 0 }} catch {{exit 1}}");
         let encode = |s: &str| {
             STANDARD.encode(
                 s.encode_utf16()
@@ -37,7 +37,14 @@ pub async fn configure_firewall(state: State<'_, Shared>, enabled: bool) -> Resu
             std::env::var_os("SystemRoot").unwrap_or_else(|| "C:\\Windows".into()),
         )
         .join("System32/WindowsPowerShell/v1.0/powershell.exe");
-        let mut command = tokio::process::Command::new(shell);
+        let mut command = tokio::process::Command::new(&shell);
+        command.env(
+            "PSModulePath",
+            shell
+                .parent()
+                .ok_or("PowerShell directory unavailable")?
+                .join("Modules"),
+        );
         command
             .args([
                 "-NoProfile",
@@ -54,7 +61,7 @@ pub async fn configure_firewall(state: State<'_, Shared>, enabled: bool) -> Resu
             return Err("Windows did not complete firewall setup. Approve the administrator prompt, or ask your administrator to allow DisplayFlow's saved TCP port on your private LAN. The app continues running without elevation.".into());
         }
         Ok(if enabled {
-            format!("Firewall access configured for TCP {port} on the local subnet of Private and Domain networks. DisplayFlow still runs without administrator rights.")
+            format!("Firewall access configured for TCP {port} and UDP 24863 discovery on the local subnet of Private and Domain networks. DisplayFlow still runs without administrator rights.")
         } else {
             "DisplayFlow's private-LAN firewall rule removed.".into()
         })

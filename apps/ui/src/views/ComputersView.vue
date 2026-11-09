@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import UTextarea from '@nuxt/ui/components/Textarea.vue'
 import UInput from '@nuxt/ui/components/Input.vue'
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, onMounted } from 'vue'
 import { Computer, Copy, Link2, Trash2, ArrowDownToLine } from 'lucide-vue-next'
 import { useApp } from '@/composables/context'
 import { call, desktop } from '@/services/bridge'
@@ -29,18 +29,46 @@ const address = ref('')
 const invitation = ref('')
 const incoming = ref('')
 const inventories = ref<Record<string, Monitor[]>>({})
+const addressHint = ref('Detecting the local address...')
+const detectedAddress = ref('Automatic')
+const addresses = ref<string[]>([])
+const nearby = ref<
+  { id: string; name: string; address: string; port: number }[]
+>([])
+const scanned = ref(false)
+onMounted(async () => {
+  if (!desktop) return
+  try {
+    const detected = await call<string>('local_address')
+    detectedAddress.value = detected
+    addressHint.value =
+      'Detected automatically. Change it if the other computer uses a different network.'
+  } catch {
+    addressHint.value =
+      'Automatic selection will use the route to the invitation sender. You can also enter an address.'
+  }
+  try {
+    addresses.value = await call<string[]>('local_addresses')
+  } catch {
+    /* Manual entry remains available. */
+  }
+})
+async function scan() {
+  nearby.value = await call('discover_computers')
+  scanned.value = true
+}
 async function copyInvitation() {
   await navigator.clipboard.writeText(invitation.value)
 }
 async function create() {
   invitation.value = await call<string>('create_invitation', {
-    address: address.value,
+    address: address.value.trim(),
   })
 }
 async function pair() {
   await call('pair_peer', {
-    invitation: incoming.value,
-    address: address.value,
+    invitation: incoming.value.trim(),
+    address: address.value.trim(),
   })
   incoming.value = ''
 }
@@ -148,16 +176,37 @@ async function pair() {
     </PageSection>
     <PageSection
       title="Pair a computer"
-      description="Use this computer’s address on your shared local network. Enable its agent in Settings first."
+      description="Create an invitation on one computer and paste it on the other. Both agents must be Listening."
     >
+      <p
+        v-if="snapshot?.agentStatus !== 'Listening'"
+        class="text-sm text-warning"
+      >
+        This agent is not Listening. Enable it in Settings and resolve any
+        reported error before pairing.
+      </p>
       <div class="flex max-w-sm flex-col gap-2">
         <label for="local-address" class="label"
           >This computer’s local IP address</label
         ><UInput
           id="local-address"
           v-model="address"
-          placeholder="192.168.x.x"
+          :placeholder="detectedAddress + ' (automatic)'"
         />
+        <p class="hint">{{ addressHint }}</p>
+        <div v-if="addresses.length" class="flex flex-wrap gap-2">
+          <Button variant="ghost" :disabled="busy" @click="address = ''"
+            >Automatic</Button
+          >
+          <Button
+            v-for="ip in addresses"
+            :key="ip"
+            variant="ghost"
+            :disabled="busy"
+            @click="address = ip"
+            >{{ ip }}</Button
+          >
+        </div>
       </div>
       <div class="flex flex-col gap-6 md:flex-row">
         <section class="flex min-w-0 flex-1 flex-col gap-3">
@@ -169,7 +218,7 @@ async function pair() {
           <Button
             class="self-start"
             :disabled="
-              busy || !desktop || !settings?.networkEnabled || !address
+              busy || !desktop || snapshot?.agentStatus !== 'Listening'
             "
             @click="run(create)"
             >Create invitation</Button
@@ -208,19 +257,50 @@ async function pair() {
             :disabled="
               busy ||
               !desktop ||
-              !settings?.networkEnabled ||
-              !incoming ||
-              !address
+              snapshot?.agentStatus !== 'Listening' ||
+              !incoming.trim()
             "
             @click="run(pair, 'Computers paired in both directions')"
             ><Link2 :size="14" />Pair computers</Button
           >
         </section>
       </div>
+      <div class="flex flex-col gap-3 border-t border-default pt-4">
+        <div class="flex flex-wrap items-center gap-3">
+          <h3 class="flex-1 text-sm font-medium">Computers on your network</h3>
+          <Button :disabled="busy || !desktop" @click="run(scan)"
+            >Find computers</Button
+          >
+        </div>
+        <p class="hint">
+          Discovery finds addresses, not trusted identities. Exchange an
+          invitation to pair a new computer. Paired computers reconnect
+          automatically after an IP change when LAN discovery is available.
+        </p>
+        <p v-if="scanned && !nearby.length" class="hint">
+          No computers found. Check Local Network permission and private-network
+          firewall access, or exchange an invitation directly.
+        </p>
+        <div
+          v-for="device in nearby"
+          :key="device.id + device.address"
+          class="flex flex-wrap items-center gap-3 text-sm"
+        >
+          <span class="min-w-0 flex-1 break-words">{{ device.name }}</span>
+          <span class="text-xs text-muted"
+            >{{ device.address }}:{{ device.port }}</span
+          >
+          <Badge>{{
+            settings?.peers.some((p) => p.id === device.id)
+              ? 'Paired'
+              : 'Invitation required'
+          }}</Badge>
+        </div>
+      </div>
       <p class="hint border-t border-default pt-4">
         Pairing allows inventory and assigned input requests. Keep invitations
-        private and revoke unwanted peers on both computers. Pair again after an
-        IP address changes.
+        private and revoke unwanted peers on both computers. Removing a pairing
+        keeps route assignments so they can be reused after pairing again.
       </p>
     </PageSection>
   </div>

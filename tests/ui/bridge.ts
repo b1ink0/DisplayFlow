@@ -179,6 +179,22 @@ export async function invoke<T>(
     await new Promise((resolve) => setTimeout(resolve, control.delayMs))
   let result: unknown
   switch (command) {
+    case 'local_address':
+      result = '192.0.2.10'
+      break
+    case 'local_addresses':
+      result = ['192.0.2.10', '192.0.2.11']
+      break
+    case 'discover_computers':
+      result = [
+        {
+          id: 'example-studio',
+          name: 'Studio',
+          address: '192.0.2.20',
+          port: 24862,
+        },
+      ]
+      break
     case 'snapshot':
       result = structuredClone(snapshot)
       break

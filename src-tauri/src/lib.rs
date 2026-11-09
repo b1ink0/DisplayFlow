@@ -2,6 +2,7 @@ mod access;
 mod credentials;
 mod deskflow;
 mod detection;
+mod discovery;
 mod lifecycle;
 mod model;
 mod modules;
@@ -50,7 +51,13 @@ async fn save_settings(state: State<'_, Shared>, mut settings: Settings) -> Resu
     let mut route_ids = std::collections::HashSet::new();
     for route in &settings.routes {
         if route.coordinator_device_id.as_ref().is_some_and(|id| {
-            id != &settings.device_id && !settings.peers.iter().any(|p| &p.id == id)
+            id != &settings.device_id
+                && !settings.peers.iter().any(|p| &p.id == id)
+                && !state
+                    .config()
+                    .routes
+                    .iter()
+                    .any(|old| old.id == route.id && old.coordinator_device_id.as_ref() == Some(id))
         }) {
             return Err("Route coordinator must be this computer or a paired computer".into());
         }
@@ -296,6 +303,23 @@ async fn panel_action(
     Ok(result)
 }
 #[tauri::command]
+fn local_address() -> Result<String, String> {
+    discovery::local_address("192.0.2.1")
+}
+#[tauri::command]
+async fn local_addresses() -> Result<Vec<String>, String> {
+    discovery::local_addresses().await
+}
+#[tauri::command]
+async fn discover_computers(state: State<'_, Shared>) -> Result<Vec<discovery::Device>, String> {
+    let own = state.config().device_id;
+    Ok(discovery::scan()
+        .await?
+        .into_iter()
+        .filter(|d| d.id != own)
+        .collect())
+}
+#[tauri::command]
 fn create_invitation(state: State<'_, Shared>, address: String) -> Result<String, String> {
     network::invitation(&state, address)
 }
@@ -317,7 +341,26 @@ fn remove_peer(state: State<'_, Shared>, id: String) -> Result<(), String> {
             format!("outbound-{own}-{id}"),
         ],
     )?;
-    state.settings.lock().unwrap().peers.retain(|p| p.id != id);
+    let affected = {
+        let mut config = state.settings.lock().unwrap();
+        config.peers.retain(|p| p.id != id);
+        config
+            .routes
+            .iter_mut()
+            .filter(|r| {
+                r.coordinator_device_id.as_ref() == Some(&id)
+                    || r.attachments.iter().any(|a| a.device_id == id)
+            })
+            .map(|r| {
+                r.active_computer = None;
+                r.id.clone()
+            })
+            .collect::<Vec<_>>()
+    };
+    for route in affected {
+        state.route_detection.lock().unwrap().remove(&route);
+        state.route_sync.lock().unwrap().remove(&route);
+    }
     state.save()
 }
 #[tauri::command]
@@ -357,6 +400,7 @@ pub fn run() {
                 lifecycle::reopen(app.handle());
             }
             tauri::async_runtime::spawn(network::serve(state.clone()));
+            tauri::async_runtime::spawn(discovery::serve(state.clone()));
             tauri::async_runtime::spawn(detection::watch(state.clone()));
             tauri::async_runtime::spawn(shared_routes::watch(state.clone()));
             tauri::async_runtime::spawn(deskflow::watch(state));
@@ -364,6 +408,6 @@ pub fn run() {
             Ok(())
         })
         .on_window_event(|window, event| { if let tauri::WindowEvent::CloseRequested { api, .. } = event { api.prevent_close(); lifecycle::hide(window.app_handle()); } })
-        .invoke_handler(tauri::generate_handler![snapshot, save_settings, inspect_module, mount_module, unmount_module, module_action, panel_action, select_destination, detect_input, confirm_input, create_invitation, pair_peer, remove_peer, peer_inventory, startup::startup_status, startup::set_startup, access::configure_firewall, access::open_network_permissions])
+        .invoke_handler(tauri::generate_handler![snapshot, save_settings, inspect_module, mount_module, unmount_module, module_action, panel_action, select_destination, detect_input, confirm_input, local_address, local_addresses, discover_computers, create_invitation, pair_peer, remove_peer, peer_inventory, startup::startup_status, startup::set_startup, access::configure_firewall, access::open_network_permissions])
         .run(tauri::generate_context!()).expect("DisplayFlow failed to start");
 }

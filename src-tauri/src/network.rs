@@ -50,6 +50,11 @@ fn identity(state: &Shared) -> Result<(String, String), String> {
     }
 }
 pub fn invitation(state: &Shared, address: String) -> Result<String, String> {
+    let address = if address.trim().is_empty() {
+        crate::discovery::local_address("192.0.2.1")?
+    } else {
+        address.trim().to_string()
+    };
     let config = state.config();
     if !config.network_enabled || *state.agent_status.lock().unwrap() != "Listening" {
         return Err("Enable the peer agent and wait until it is listening first".into());
@@ -73,7 +78,7 @@ pub fn invitation(state: &Shared, address: String) -> Result<String, String> {
     })
     .map_err(|e| e.to_string())
 }
-fn validate_address(address: &str) -> Result<(), String> {
+pub(crate) fn validate_address(address: &str) -> Result<(), String> {
     let ip: std::net::IpAddr = address
         .parse()
         .map_err(|_| "Use a local-network IP address")?;
@@ -86,7 +91,7 @@ fn validate_address(address: &str) -> Result<(), String> {
     }
     Ok(())
 }
-async fn exchange(peer: &Peer, payload: Value) -> Result<Value, String> {
+async fn exchange(state: &Shared, peer: &Peer, payload: Value) -> Result<Value, String> {
     validate_address(&peer.address)?;
     let bytes = B64.decode(&peer.certificate).map_err(|e| e.to_string())?;
     let mut roots = rustls::RootCertStore::empty();
@@ -99,30 +104,52 @@ async fn exchange(peer: &Peer, payload: Value) -> Result<Value, String> {
     let input_read = payload["operation"] == "getInput";
     let shared_read = payload["operation"] == "getRoute" || payload["operation"] == "pushRoute";
     let timeout = if input_read || shared_read {
-        6
+        12
     } else if payload["operation"] == "selectRoute" {
         35
     } else {
         20
     };
     let work = async {
-        let stream = TcpStream::connect((peer.address.as_str(), peer.port))
-            .await
-            .map_err(|e| {
-                let message = format!("Cannot reach {}:{}: {e}. Check the peer agent, address, and private-LAN firewall access.", peer.address, peer.port);
-                #[cfg(target_os = "macos")]
-                let message = format!("{message} On macOS, allow DisplayFlow in System Settings → Privacy & Security → Local Network, then try pairing again.");
-                message
-            })?;
-        let stream = TlsConnector::from(Arc::new(config))
-            .connect(
-                ServerName::try_from("displayflow.local")
-                    .unwrap()
-                    .to_owned(),
-                stream,
-            )
-            .await
-            .map_err(|e| format!("Pinned TLS connection failed: {e}"))?;
+        let connector = TlsConnector::from(Arc::new(config));
+        let connect = |address: String, port| {
+            let connector = connector.clone();
+            async move {
+                let stream = tokio::time::timeout(
+                    Duration::from_millis(1200),
+                    TcpStream::connect((address.as_str(), port)),
+                )
+                .await
+                .map_err(|_| "Connection timed out".to_string())?
+                .map_err(|e| e.to_string())?;
+                tokio::time::timeout(
+                    Duration::from_millis(1200),
+                    connector.connect(
+                        ServerName::try_from("displayflow.local")
+                            .unwrap()
+                            .to_owned(),
+                        stream,
+                    ),
+                )
+                .await
+                .map_err(|_| "TLS handshake timed out".to_string())?
+                .map_err(|e| format!("Pinned TLS connection failed: {e}"))
+            }
+        };
+        let (stream, address, port) = match connect(peer.address.clone(), peer.port).await {
+            Ok(stream) => (stream, peer.address.clone(), peer.port),
+            Err(original) => {
+                let candidates = crate::discovery::scan().await?;
+                let mut found = None;
+                for candidate in candidates.into_iter().filter(|d| d.id == peer.id).take(4) {
+                    if let Ok(stream) = connect(candidate.address.clone(), candidate.port).await {
+                        found = Some((stream, candidate.address, candidate.port));
+                        break;
+                    }
+                }
+                found.ok_or_else(|| format!("Cannot reach {}: {original}. Check that both agents are Listening and allow DisplayFlow's TCP port and UDP 24863 on your private LAN. If discovery is blocked, use a fresh invitation.", peer.name))?
+            }
+        };
         let mut stream = BufReader::new(stream);
         let mut bytes = serde_json::to_vec(&payload).map_err(|e| e.to_string())?;
         bytes.push(b'\n');
@@ -141,13 +168,39 @@ async fn exchange(peer: &Peer, payload: Value) -> Result<Value, String> {
         if result.len() > 65_536 {
             return Err("Peer response exceeds 64 KiB".into());
         }
-        let result: Value = serde_json::from_slice(&result).map_err(|e| e.to_string())?;
+        let mut result: Value = serde_json::from_slice(&result).map_err(|e| e.to_string())?;
         if result["ok"] != true {
             return Err(result["message"]
                 .as_str()
                 .unwrap_or("Peer declined request")
                 .into());
         }
+        // Discovery is only an address hint. Persist it after pinned TLS and authentication succeed.
+        let changed = {
+            let mut config = state.settings.lock().unwrap();
+            if let Some(saved) = config
+                .peers
+                .iter_mut()
+                .find(|p| p.id == peer.id && p.certificate == peer.certificate)
+            {
+                let changed = saved.address != address || saved.port != port;
+                saved.address = address.clone();
+                saved.port = port;
+                changed
+            } else {
+                false
+            }
+        };
+        if changed {
+            if let Err(error) = state.save() {
+                state.log(
+                    "warning",
+                    format!("Peer address changed but could not be saved: {error}"),
+                );
+            }
+        }
+        result["connectedAddress"] = json!(address);
+        result["connectedPort"] = json!(port);
         Ok(result)
     };
     tokio::time::timeout(Duration::from_secs(timeout), work)
@@ -155,6 +208,10 @@ async fn exchange(peer: &Peer, payload: Value) -> Result<Value, String> {
         .map_err(|_| {
             if input_read {
                 "Peer input query timed out; no input evidence was obtained.".to_string()
+            } else if payload["operation"] == "pair" {
+                "Pairing timed out. Check both agents and LAN permissions. Create a fresh invitation before retrying.".to_string()
+            } else if payload["operation"] != "setInput" && payload["operation"] != "selectRoute" {
+                "Peer request timed out. Check the agent and LAN permissions.".to_string()
             } else {
                 "Peer timed out; switch outcome is unknown. Reconfirm the active input before retrying.".to_string()
             }
@@ -165,7 +222,10 @@ pub async fn pair(
     invitation_text: String,
     own_address: String,
 ) -> Result<(), String> {
-    let invite: Invitation = serde_json::from_str(&invitation_text).map_err(|e| e.to_string())?;
+    let mut invite: Invitation = serde_json::from_str(invitation_text.trim()).map_err(|_| {
+        "This is not a complete invitation. Copy the entire invitation from the other computer."
+            .to_string()
+    })?;
     let settings = state.config();
     if !settings.network_enabled {
         return Err("Enable this computer's peer agent first".into());
@@ -173,6 +233,11 @@ pub async fn pair(
     if invite.version != 1 || invite.expires < now() || invite.peer.id == settings.device_id {
         return Err("Invitation is expired, unsupported, or belongs to this device".into());
     }
+    let own_address = if own_address.trim().is_empty() {
+        crate::discovery::local_address(&invite.peer.address)?
+    } else {
+        own_address.trim().to_string()
+    };
     validate_address(&own_address)?;
     let (certificate, _) = identity(state)?;
     let me = Peer {
@@ -189,6 +254,7 @@ pub async fn pair(
         &reverse_token,
     )?;
     let response = exchange(
+        state,
         &invite.peer,
         json!({"operation":"pair", "token":invite.token, "peer":me, "reverseToken":reverse_token}),
     )
@@ -196,6 +262,13 @@ pub async fn pair(
     let credential = response["token"]
         .as_str()
         .ok_or("Pairing response missing credential")?;
+    invite.peer.address = response["connectedAddress"]
+        .as_str()
+        .ok_or("Missing connected address")?
+        .into();
+    invite.peer.port = response["connectedPort"]
+        .as_u64()
+        .ok_or("Missing connected port")? as u16;
     credentials::set(
         state,
         &format!("outbound-{}-{}", settings.device_id, invite.peer.id),
@@ -223,16 +296,17 @@ pub async fn remote(
         state,
         &format!("outbound-{id}-{}", peer.id)
     )?);
-    exchange(peer, payload).await
+    exchange(state, peer, payload).await
 }
-async fn handle(state: &Shared, payload: Value) -> Result<Value, String> {
+async fn handle(state: &Shared, payload: Value, source: std::net::IpAddr) -> Result<Value, String> {
     if !state.config().network_enabled {
         return Err("Peer agent is disabled".into());
     }
     let operation = payload["operation"].as_str().ok_or("Missing operation")?;
     if operation == "pair" {
-        let peer: Peer =
+        let mut peer: Peer =
             serde_json::from_value(payload["peer"].clone()).map_err(|e| e.to_string())?;
+        peer.address = source.to_string();
         validate_address(&peer.address)?;
         let secret = payload["token"]
             .as_str()
@@ -272,6 +346,20 @@ async fn handle(state: &Shared, payload: Value) -> Result<Value, String> {
     let expected = credentials::get(state, &format!("inbound-{}-{sender}", config.device_id))?;
     if !equal(&expected, payload["token"].as_str().unwrap_or("")) {
         return Err("Authentication failed".into());
+    }
+    let changed = {
+        let mut settings = state.settings.lock().unwrap();
+        if let Some(peer) = settings.peers.iter_mut().find(|p| p.id == sender) {
+            let address = source.to_string();
+            let changed = peer.address != address;
+            peer.address = address;
+            changed
+        } else {
+            false
+        }
+    };
+    if changed {
+        state.save()?;
     }
     match operation {
         "getRoute" | "configureRoute" | "confirmRoute" | "detectRoute" | "selectRoute" => {
@@ -436,7 +524,7 @@ pub async fn serve(state: Shared) {
                             return Err("Request exceeds 64 KiB".to_string());
                         }
                         let result = match serde_json::from_slice::<Value>(&bytes) {
-                            Ok(value) => handle(&state, value).await,
+                            Ok(value) => handle(&state, value, remote_address.ip()).await,
                             Err(_) => Err("Invalid request".into()),
                         };
                         let value = match result {
@@ -456,5 +544,79 @@ pub async fn serve(state: Shared) {
                 });
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    async fn exercise_response(reply: bool) -> Result<Value, String> {
+        rustls::crypto::ring::default_provider()
+            .install_default()
+            .ok();
+        let directory =
+            std::env::temp_dir().join(format!("displayflow-network-test-{}", uuid::Uuid::new_v4()));
+        let state = crate::store::Runtime::load(directory.clone()).unwrap();
+        let key = rcgen::generate_simple_self_signed(vec!["displayflow.local".into()]).unwrap();
+        let certificate = B64.encode(key.cert.der());
+        let config = rustls::ServerConfig::builder()
+            .with_no_client_auth()
+            .with_single_cert(
+                vec![CertificateDer::from(key.cert.der().to_vec())],
+                PrivateKeyDer::Pkcs8(PrivatePkcs8KeyDer::from(key.key_pair.serialize_der())),
+            )
+            .unwrap();
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let peer = Peer {
+            id: "test-peer".into(),
+            name: "Test peer".into(),
+            address: "127.0.0.1".into(),
+            port: listener.local_addr().unwrap().port(),
+            certificate,
+        };
+        let task = tokio::spawn(async move {
+            let (socket, _) = listener.accept().await.unwrap();
+            let tls = TlsAcceptor::from(Arc::new(config))
+                .accept(socket)
+                .await
+                .unwrap();
+            let mut stream = BufReader::new(tls);
+            let mut line = String::new();
+            stream.read_line(&mut line).await.unwrap();
+            assert_eq!(
+                serde_json::from_str::<Value>(&line).unwrap()["operation"],
+                "inventory"
+            );
+            if reply {
+                stream
+                    .get_mut()
+                    .write_all(b"{\"ok\":true,\"monitors\":[]}\n")
+                    .await
+                    .unwrap();
+            }
+            // Keep the listener open briefly: a resend would create a second connection.
+            assert!(
+                tokio::time::timeout(Duration::from_millis(150), listener.accept())
+                    .await
+                    .is_err()
+            );
+        });
+        let result = exchange(&state, &peer, json!({"operation":"inventory"})).await;
+        task.await.unwrap();
+        std::fs::remove_dir(directory).unwrap();
+        result
+    }
+
+    #[tokio::test]
+    async fn pinned_peer_reply_is_returned_with_actual_endpoint() {
+        let reply = exercise_response(true).await.unwrap();
+        assert_eq!(reply["connectedAddress"], "127.0.0.1");
+        assert_eq!(reply["monitors"], json!([]));
+    }
+
+    #[tokio::test]
+    async fn lost_response_does_not_resend_a_transmitted_request() {
+        assert!(exercise_response(false).await.is_err());
     }
 }

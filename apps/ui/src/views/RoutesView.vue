@@ -329,6 +329,14 @@ function monitorName(id: string) {
                 ><Badge v-if="route.activeComputer === a.computer"
                   >Current source</Badge
                 >
+                <Badge
+                  v-if="
+                    a.deviceId !== settings?.deviceId &&
+                    !settings?.peers.some((p) => p.id === a.deviceId)
+                  "
+                  tone="warning"
+                  >Not paired</Badge
+                >
               </div>
             </div>
             <div

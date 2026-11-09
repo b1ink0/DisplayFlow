@@ -340,6 +340,87 @@ test('input controls send the selected route and destination once', async ({
   ).toContainText('Studio')
 })
 
+test('pairing works without a manually entered address and keeps failures actionable', async ({
+  page,
+}) => {
+  await page.goto('/?empty=1')
+  await navigate(page, 'Computers')
+  await expect(page.getByLabel('This computer’s local IP address')).toBeEmpty()
+  await page.getByLabel('Invitation to accept').fill('  pasted invitation  ')
+  const pair = page.getByRole('button', { name: 'Pair computers', exact: true })
+  await expect(pair).toBeEnabled()
+  await page.screenshot({
+    path: 'local-docs/pairing-desktop.png',
+    fullPage: true,
+  })
+  await page.evaluate(() => {
+    ;(
+      window as unknown as { displayflowFixture: { failNext: boolean } }
+    ).displayflowFixture.failNext = true
+  })
+  await pair.click()
+  await expect(
+    page.getByText('The provider is unavailable. Check the local agent.', {
+      exact: true,
+    }),
+  ).toBeVisible()
+  await expect(page.getByLabel('Invitation to accept')).toHaveValue(
+    '  pasted invitation  ',
+  )
+  await pair.click()
+  await expect(page.getByLabel('Invitation to accept')).toBeEmpty()
+  const calls = await page.evaluate(() =>
+    (
+      window as unknown as {
+        displayflowFixture: {
+          calls: { command: string; args: Record<string, unknown> }[]
+        }
+      }
+    ).displayflowFixture.calls.filter((c) => c.command === 'pair_peer'),
+  )
+  expect(calls.at(-1)?.args).toEqual({
+    invitation: 'pasted invitation',
+    address: '',
+  })
+})
+
+test('pairing address choices and LAN discovery remain usable at narrow widths', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.goto('/?empty=1')
+  await navigate(page, 'Computers')
+  await page.getByRole('button', { name: '192.0.2.11', exact: true }).click()
+  await expect(page.getByLabel('This computer’s local IP address')).toHaveValue(
+    '192.0.2.11',
+  )
+  await page.getByRole('button', { name: 'Automatic', exact: true }).click()
+  await expect(page.getByLabel('This computer’s local IP address')).toBeEmpty()
+  await page
+    .getByRole('button', { name: 'Find computers', exact: true })
+    .click()
+  await expect(
+    page.getByText('192.0.2.20:24862', { exact: true }),
+  ).toBeVisible()
+  await expect(
+    page.getByText('Invitation required', { exact: true }),
+  ).toBeVisible()
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    ),
+  ).toBe(true)
+  await page.screenshot({
+    path: 'local-docs/pairing-narrow.png',
+    fullPage: true,
+  })
+  await page.setViewportSize({ width: 820, height: 900 })
+  await page.screenshot({
+    path: 'local-docs/pairing-medium.png',
+    fullPage: true,
+  })
+})
+
 test('production builds reject the UI fixture transport', async () => {
   const { spawnSync } = await import('node:child_process')
   const { resolve } = await import('node:path')
